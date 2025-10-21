@@ -144,20 +144,8 @@ Always be concise, helpful, and base responses on what the user was discussing. 
         });
       }
 
-      if (event.type === 'session.updated') {
-        console.log('📡 Transport event:', event.type);
-        // @ts-ignore
-        const sessionData = event.session;
-        console.log('  output_modalities:', sessionData?.output_modalities);
-        console.log('  audio.input.transcription:', sessionData?.audio?.input?.transcription);
-        console.log('  audio.input.turn_detection:', sessionData?.audio?.input?.turn_detection);
-        console.log('  create_response:', sessionData?.audio?.input?.turn_detection?.create_response);
-      }
-
       // Server VAD detected speech starting - interrupt immediately if audio is playing
       if (event.type === 'input_audio_buffer.speech_started') {
-        console.log(`🎤 Speech started - agentState: ${agentState}, isPlayingAudio: ${isPlayingAudio.current}`);
-
         // IMMEDIATE barge-in: Stop agent if audio is playing OR if generating/speaking
         if (isPlayingAudio.current || agentState === 'speaking' || agentState === 'generating') {
           console.log(`⚡ BARGE-IN: User started speaking while audio playing - interrupting IMMEDIATELY`);
@@ -167,23 +155,11 @@ Always be concise, helpful, and base responses on what the user was discussing. 
         }
       }
 
-      // Server VAD detected end of speech
-      // DON'T commit automatically - we'll commit manually when we want to create a response
-      if (event.type === 'input_audio_buffer.speech_stopped') {
-        console.log('🎤 Speech stopped (audio buffered, not committed)');
-        // Audio stays in buffer, waiting for manual commit when triggered
-      }
-
-      // Audio successfully committed to conversation
-      if (event.type === 'input_audio_buffer.committed') {
-        console.log('✅ Audio committed to conversation context');
-      }
 
       // Listen for transcription completion (without committing)
       if (event.type === 'conversation.item.input_audio_transcription.completed') {
         // @ts-ignore
         const transcript = event.transcript;
-        console.log('📝 Transcript (uncommitted):', transcript);
 
         if (transcript) {
           const textLower = transcript.toLowerCase();
@@ -423,7 +399,6 @@ Always be concise, helpful, and base responses on what the user was discussing. 
         }
       });
 
-      console.log(`📜 Total transcripts: ${newTranscripts.length}`);
       setTranscripts(newTranscripts);
     });
 
