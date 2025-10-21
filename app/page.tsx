@@ -121,6 +121,15 @@ Always be concise, helpful, and base responses on what the user was discussing.`
         console.log('✅ Audio committed to conversation context');
       }
 
+      // Track response lifecycle for debugging
+      if (event.type === 'response.created') {
+        console.log('📝 Response created by server');
+      }
+
+      if (event.type === 'response.output_item.added') {
+        console.log('📝 Response output item added');
+      }
+
       // Handle audio output from agent responses
       if (event.type === 'response.audio.delta') {
         setIsSpeaking(true);
@@ -133,6 +142,7 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       }
 
       if (event.type === 'response.done') {
+        console.log('✅ Response complete');
         setIsSpeaking(false);
       }
 
@@ -186,12 +196,14 @@ Always be concise, helpful, and base responses on what the user was discussing.`
         const fullGuidanceDetected = textLower.includes(settings.fullGuidancePhrase.toLowerCase());
 
         if (quickHintDetected || fullGuidanceDetected) {
+          console.log(`🎯 Trigger detected: "${latestUserText}"`);
           // Create a SINGLE audio response based on accumulated context
           // The session already has all committed audio as context
           const responseType = quickHintDetected ? 'quick hint' : 'full guidance';
           const duration = quickHintDetected ? settings.quickHintDuration : settings.fullGuidanceDuration;
 
           setTimeout(() => {
+            console.log(`📤 Creating ${responseType} response...`);
             session.current?.transport?.sendEvent({
               type: 'response.create',
               response: {
@@ -214,7 +226,7 @@ Always be concise, helpful, and base responses on what the user was discussing.`
     session.current.on('error', (error: any) => {
       // Suppress expected "empty buffer" errors - these happen when VAD
       // fires before any audio has been sent (e.g., at session start)
-      const errorCode = error?.error?.code;
+      const errorCode = error?.error?.error?.code;
       if (errorCode === 'input_audio_buffer_commit_empty') {
         // Silently ignore - this is expected behavior at session start
         return;
