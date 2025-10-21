@@ -99,10 +99,13 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       // This is critical - without this, the agent responds after every utterance
       if (event.type === 'session.created') {
         console.log('🔧 Disabling automatic turn detection...');
+        // @ts-ignore - session structure
+        const currentSession = event.session;
         session.current?.transport?.sendEvent({
           type: 'session.update',
           session: {
-            turn_detection: null, // Disable auto-response after user speech
+            ...currentSession, // Include all existing session fields
+            turn_detection: null, // Override to disable auto-response
           },
         });
       }
