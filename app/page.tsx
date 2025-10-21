@@ -27,10 +27,12 @@ export default function Home() {
   const player = useRef<WavStreamPlayer | null>(null);
   const transcriptCache = useRef<Map<string, string>>(new Map()); // Cache transcripts by item_id
 
+  // Agent states
+  type AgentState = 'idle' | 'listening' | 'generating' | 'speaking';
+  const [agentState, setAgentState] = useState<AgentState>('idle');
+
   const [isConnected, setIsConnected] = useState(false);
   const [isListening, setIsListening] = useState(true);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isGeneratingResponse, setIsGeneratingResponse] = useState(false);
   const [settings, setSettings] = useState<VoiceSettings>(DEFAULT_SETTINGS);
   const [transcripts, setTranscripts] = useState<TranscriptItem[]>([]);
   const [events, setEvents] = useState<TransportEvent[]>([]);
@@ -147,9 +149,9 @@ Always be concise, helpful, and base responses on what the user was discussing. 
       if (event.type === 'input_audio_buffer.speech_started') {
         console.log('🎤 Speech started');
 
-        // Interrupt agent if it's currently speaking (barge-in)
-        if (isSpeaking || isGeneratingResponse) {
-          console.log('⚡ User started speaking - interrupting agent (barge-in)');
+        // Interrupt agent if it's currently speaking or generating (barge-in)
+        if (agentState === 'speaking' || agentState === 'generating') {
+          console.log(`⚡ User started speaking during ${agentState} - interrupting agent (barge-in)`);
           interruptAgent();
         }
       }
@@ -180,8 +182,8 @@ Always be concise, helpful, and base responses on what the user was discussing. 
             textLower.includes(phrase.toLowerCase())
           );
 
-          if (interruptDetected && (isGeneratingResponse || isSpeaking)) {
-            console.log(`⛔ Interrupt phrase detected: "${transcript}"`);
+          if (interruptDetected && (agentState === 'speaking' || agentState === 'generating')) {
+            console.log(`⛔ Interrupt phrase detected during ${agentState}: "${transcript}"`);
             interruptAgent();
             return;
           }
@@ -192,13 +194,13 @@ Always be concise, helpful, and base responses on what the user was discussing. 
 
           if (quickHintDetected || fullGuidanceDetected) {
             // Check if already generating a response
-            if (isGeneratingResponse) {
-              console.log('⚠️ Already generating response, ignoring trigger');
+            if (agentState === 'generating' || agentState === 'speaking') {
+              console.log(`⚠️ Agent is ${agentState}, ignoring trigger`);
               return;
             }
 
             console.log(`🎯 Trigger detected: "${transcript}"`);
-            setIsGeneratingResponse(true);
+            setAgentState('generating');
 
             const responseType = quickHintDetected ? 'quick hint' : 'full guidance';
             const duration = quickHintDetected ? settings.quickHintDuration : settings.fullGuidanceDuration;
@@ -234,7 +236,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
       // Track response lifecycle for debugging
       if (event.type === 'response.created') {
         console.log('📝 Response created by server');
-        setIsGeneratingResponse(true);
+        setAgentState('generating');
       }
 
       if (event.type === 'response.output_item.added') {
@@ -244,7 +246,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
       // Handle audio output from agent responses
       if (event.type === 'response.output_audio.delta') {
         console.log('🔊 Audio delta received, size:', event.delta?.length);
-        setIsSpeaking(true);
+        setAgentState('speaking');
         // @ts-ignore - audio delta structure
         const audioData = event.delta;
         if (audioData && player.current) {
@@ -259,11 +261,10 @@ Always be concise, helpful, and base responses on what the user was discussing. 
         }
       }
 
-      // Track when audio actually finishes playing (not just generated)
+      // Track when audio generation finishes (not playback)
       if (event.type === 'response.output_audio.done') {
-        console.log('🔇 Audio output complete');
-        // Don't set isSpeaking to false here - let it play out
-        // We'll set it to false when interrupted or when player finishes
+        console.log('🔇 Audio generation complete (playback may continue)');
+        // Keep state as 'speaking' - audio is still playing
       }
 
       // Capture audio transcript when it completes
@@ -282,8 +283,6 @@ Always be concise, helpful, and base responses on what the user was discussing. 
 
       if (event.type === 'response.done') {
         console.log('✅ Response generation complete - switching back to text-only mode');
-        // DON'T set isSpeaking to false yet - audio might still be playing
-        setIsGeneratingResponse(false); // Reset flag
 
         // Switch back to text-only mode (silent) for future responses
         session.current?.transport?.sendEvent({
@@ -294,12 +293,18 @@ Always be concise, helpful, and base responses on what the user was discussing. 
           },
         });
 
-        // Set isSpeaking to false after a delay to allow audio to finish
-        // This is a workaround - ideally we'd track when WavStreamPlayer finishes
+        // Keep state as 'speaking' until audio finishes or interrupted
+        // We'll transition to 'listening' after a delay or when interrupted
         setTimeout(() => {
-          console.log('🔇 Clearing isSpeaking state after playback delay');
-          setIsSpeaking(false);
-        }, 2000); // 2 second buffer
+          setAgentState((currentState) => {
+            // Only transition if we haven't been interrupted
+            if (currentState === 'speaking') {
+              console.log('🔇 Audio playback complete - back to listening');
+              return 'listening';
+            }
+            return currentState;
+          });
+        }, 3000); // 3 second buffer for audio playback
       }
 
       // Audio interruption is handled separately via the interruptAgent() function
@@ -483,15 +488,14 @@ Always be concise, helpful, and base responses on what the user was discussing. 
 
   // Trigger response via button - switch to audio mode and create response
   async function triggerQuickHint() {
-    if (!session.current || !isConnected || isGeneratingResponse) {
-      if (isGeneratingResponse) {
-        console.log('⚠️ Already generating response, ignoring button click');
-      }
+    if (!session.current || !isConnected) return;
+    if (agentState === 'generating' || agentState === 'speaking') {
+      console.log(`⚠️ Agent is ${agentState}, ignoring button click`);
       return;
     }
 
     console.log('📤 Manual trigger: Quick Hint - switching to audio mode...');
-    setIsGeneratingResponse(true);
+    setAgentState('generating');
 
     // Switch to audio mode
     session.current.transport?.sendEvent({
@@ -514,15 +518,14 @@ Always be concise, helpful, and base responses on what the user was discussing. 
   }
 
   async function triggerFullGuidance() {
-    if (!session.current || !isConnected || isGeneratingResponse) {
-      if (isGeneratingResponse) {
-        console.log('⚠️ Already generating response, ignoring button click');
-      }
+    if (!session.current || !isConnected) return;
+    if (agentState === 'generating' || agentState === 'speaking') {
+      console.log(`⚠️ Agent is ${agentState}, ignoring button click`);
       return;
     }
 
     console.log('📤 Manual trigger: Full Guidance - switching to audio mode...');
-    setIsGeneratingResponse(true);
+    setAgentState('generating');
 
     // Switch to audio mode
     session.current.transport?.sendEvent({
@@ -545,11 +548,12 @@ Always be concise, helpful, and base responses on what the user was discussing. 
   }
 
   async function interruptAgent() {
-    if (!session.current || !isConnected || !isSpeaking) return;
+    if (!session.current || !isConnected) return;
+    if (agentState !== 'speaking' && agentState !== 'generating') return;
 
-    console.log('⛔ Interrupting agent response...');
+    console.log(`⛔ Interrupting agent (was ${agentState})...`);
 
-    // Stop audio playback
+    // IMMEDIATELY stop audio playback
     await player.current?.interrupt();
 
     // Cancel the current response
@@ -566,8 +570,9 @@ Always be concise, helpful, and base responses on what the user was discussing. 
       },
     });
 
-    setIsSpeaking(false);
-    setIsGeneratingResponse(false); // Reset flag when interrupting
+    // IMMEDIATELY set state to listening
+    setAgentState('listening');
+    console.log('✅ Agent interrupted - back to listening');
   }
 
   return (
@@ -615,11 +620,15 @@ Always be concise, helpful, and base responses on what the user was discussing. 
                     <div className="flex items-center gap-2">
                       <div
                         className={`w-3 h-3 rounded-full ${
-                          isSpeaking ? 'bg-purple-500 animate-pulse' : 'bg-gray-300'
+                          agentState === 'speaking' ? 'bg-purple-500 animate-pulse' :
+                          agentState === 'generating' ? 'bg-yellow-500 animate-pulse' :
+                          'bg-gray-300'
                         }`}
                       />
                       <span className="text-sm">
-                        {isSpeaking ? 'Speaking' : 'Silent'}
+                        {agentState === 'speaking' ? 'Speaking' :
+                         agentState === 'generating' ? 'Generating' :
+                         'Silent'}
                       </span>
                     </div>
                   </>
@@ -658,7 +667,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
               <div className="flex gap-3">
                 <Button
                   onClick={triggerQuickHint}
-                  disabled={!isConnected || isGeneratingResponse}
+                  disabled={!isConnected || agentState === 'generating' || agentState === 'speaking'}
                   variant="success"
                   className="flex-1"
                 >
@@ -666,7 +675,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
                 </Button>
                 <Button
                   onClick={triggerFullGuidance}
-                  disabled={!isConnected || isGeneratingResponse}
+                  disabled={!isConnected || agentState === 'generating' || agentState === 'speaking'}
                   variant="warning"
                   className="flex-1"
                 >
@@ -674,7 +683,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
                 </Button>
                 <Button
                   onClick={interruptAgent}
-                  disabled={!isConnected || !isGeneratingResponse}
+                  disabled={!isConnected || (agentState !== 'generating' && agentState !== 'speaking')}
                   variant="danger"
                 >
                   ⛔ Interrupt
