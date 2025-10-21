@@ -168,6 +168,19 @@ Always be concise, helpful, and base responses on what the user was discussing. 
 
         if (transcript) {
           const textLower = transcript.toLowerCase();
+
+          // Check for interrupt phrases first
+          const interruptDetected = settings.interruptPhrases.some(phrase =>
+            textLower.includes(phrase.toLowerCase())
+          );
+
+          if (interruptDetected && isGeneratingResponse) {
+            console.log(`⛔ Interrupt phrase detected: "${transcript}"`);
+            interruptAgent();
+            return;
+          }
+
+          // Check for trigger phrases
           const quickHintDetected = textLower.includes(settings.quickHintPhrase.toLowerCase());
           const fullGuidanceDetected = textLower.includes(settings.fullGuidancePhrase.toLowerCase());
 
@@ -242,10 +255,12 @@ Always be concise, helpful, and base responses on what the user was discussing. 
 
       // Capture audio transcript when it completes
       if (event.type === 'response.output_audio_transcript.done') {
+        console.log('🎯 Output audio transcript done event received!', event);
         // @ts-ignore
         const itemId = event.item_id;
         // @ts-ignore
         const transcript = event.transcript;
+        console.log(`  item_id: ${itemId}, transcript length: ${transcript?.length}`);
         if (itemId && transcript) {
           console.log(`💾 Caching transcript for ${itemId}: ${transcript.substring(0, 50)}...`);
           transcriptCache.current.set(itemId, transcript);
@@ -289,15 +304,14 @@ Always be concise, helpful, and base responses on what the user was discussing. 
               // Check both transcript and audio properties
               text = content.transcript || '';
             } else if (content.type === 'output_audio') {
-              // For output_audio, check transcript property or use cached version
-              // @ts-ignore
-              const contentId = content.id;
-              text = content.transcript || transcriptCache.current.get(contentId) || '';
+              // For output_audio, use transcript if available, otherwise check cache by item ID
+              // The content doesn't have a stable ID, so we use the parent item's itemId
+              text = content.transcript || transcriptCache.current.get(item.itemId) || '';
 
               // Debug: Log the full content structure
-              if (!text && contentId) {
-                console.log(`  Output audio missing transcript for ID: ${contentId}`);
-                console.log(`  Cache has: ${transcriptCache.current.has(contentId)}`);
+              if (!text) {
+                console.log(`  Output audio content:`, JSON.stringify(content, null, 2));
+                console.log(`  Checking cache for item ID: ${item.itemId}, found: ${transcriptCache.current.has(item.itemId)}`);
               }
             }
 
