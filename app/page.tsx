@@ -25,6 +25,7 @@ export default function Home() {
   const session = useRef<RealtimeSession<any> | null>(null);
   const recorder = useRef<WavRecorder | null>(null);
   const player = useRef<WavStreamPlayer | null>(null);
+  const transcriptCache = useRef<Map<string, string>>(new Map()); // Cache transcripts by item_id
 
   const [isConnected, setIsConnected] = useState(false);
   const [isListening, setIsListening] = useState(true);
@@ -239,9 +240,16 @@ Always be concise, helpful, and base responses on what the user was discussing. 
         }
       }
 
-      // Log all response-related events for debugging
-      if (event.type.startsWith('response.')) {
-        console.log('📡 Response event:', event.type, event);
+      // Capture audio transcript when it completes
+      if (event.type === 'response.output_audio_transcript.done') {
+        // @ts-ignore
+        const itemId = event.item_id;
+        // @ts-ignore
+        const transcript = event.transcript;
+        if (itemId && transcript) {
+          console.log(`💾 Caching transcript for ${itemId}: ${transcript.substring(0, 50)}...`);
+          transcriptCache.current.set(itemId, transcript);
+        }
       }
 
       if (event.type === 'response.done') {
@@ -265,26 +273,38 @@ Always be concise, helpful, and base responses on what the user was discussing. 
 
     // Listen to conversation history updates
     session.current.on('history_updated', (history: RealtimeItem[]) => {
+      console.log('📜 History updated, total items:', history.length);
       const newTranscripts: TranscriptItem[] = [];
       let latestUserText = '';
 
       history.forEach((item) => {
         if (item.type === 'message') {
-          item.content.forEach((content) => {
+          item.content.forEach((content, contentIndex) => {
             let text = '';
             if (content.type === 'input_text') {
               text = content.text;
             } else if (content.type === 'output_text') {
               text = content.text;
-            } else if (content.type === 'input_audio' && content.transcript) {
-              text = content.transcript;
-            } else if (content.type === 'output_audio' && content.transcript) {
-              text = content.transcript;
+            } else if (content.type === 'input_audio') {
+              // Check both transcript and audio properties
+              text = content.transcript || '';
+            } else if (content.type === 'output_audio') {
+              // For output_audio, check transcript property or use cached version
+              // @ts-ignore
+              const contentId = content.id;
+              text = content.transcript || transcriptCache.current.get(contentId) || '';
+
+              // Debug: Log the full content structure
+              if (!text && contentId) {
+                console.log(`  Output audio missing transcript for ID: ${contentId}`);
+                console.log(`  Cache has: ${transcriptCache.current.has(contentId)}`);
+              }
             }
 
             if (text) {
+              console.log(`  Adding to transcript: [${item.role}] ${text.substring(0, 50)}...`);
               newTranscripts.push({
-                id: `${item.itemId}-${content.type}`,
+                id: `${item.itemId}-${content.type}-${contentIndex}`,
                 role: item.role === 'user' ? 'user' : 'assistant',
                 text,
                 timestamp: new Date(),
@@ -295,14 +315,15 @@ Always be concise, helpful, and base responses on what the user was discussing. 
                 latestUserText = text;
                 setConversationHistory((prev) => [...prev, text].slice(-10)); // Keep last 10 messages
               }
+            } else {
+              // Debug: log items without transcripts
+              console.log(`  Skipping item: role=${item.role}, content.type=${content.type}, has transcript=${!!content.transcript}`);
             }
           });
         }
       });
 
-      // Note: Trigger detection is handled in the transcription event handler above
-      // This history_updated handler is only for updating the transcript display
-
+      console.log(`📜 Total transcripts: ${newTranscripts.length}`);
       setTranscripts(newTranscripts);
     });
 
