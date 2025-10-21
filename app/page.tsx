@@ -127,9 +127,9 @@ Always be concise, helpful, and base responses on what the user was discussing.`
         console.log('📡 Transport event:', event.type);
         // @ts-ignore
         const sessionData = event.session;
-        console.log('  modalities:', sessionData?.modalities);
-        console.log('  input_audio_transcription:', sessionData?.input_audio_transcription);
-        console.log('  turn_detection:', sessionData?.turn_detection);
+        console.log('  output_modalities:', sessionData?.output_modalities);
+        console.log('  audio.input.transcription:', sessionData?.audio?.input?.transcription);
+        console.log('  Full session:', sessionData);
       }
 
       // Server VAD detected speech starting
