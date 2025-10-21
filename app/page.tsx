@@ -111,8 +111,10 @@ Always be concise, helpful, and base responses on what the user was discussing.`
             output_modalities: ['text'], // Text-only mode - prevents audio responses
             audio: {
               input: {
-                transcription: {
-                  model: 'whisper-1', // Enable transcription
+                transcription: null, // Disable transcription (we'll use conversation items)
+                turn_detection: {
+                  type: 'server_vad',
+                  create_response: false, // CRITICAL: Disable auto-response
                 },
               },
               output: {
