@@ -26,6 +26,7 @@ export default function Home() {
   const recorder = useRef<WavRecorder | null>(null);
   const player = useRef<WavStreamPlayer | null>(null);
   const transcriptCache = useRef<Map<string, string>>(new Map()); // Cache transcripts by item_id
+  const sessionHistory = useRef<RealtimeItem[]>([]); // Store full session history for LLM context logging
 
   // Agent states
   type AgentState = 'idle' | 'listening' | 'generating' | 'speaking';
@@ -246,7 +247,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
               console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
               // Get the current session history
-              const currentHistory = session.current?.getHistory() || [];
+              const currentHistory = sessionHistory.current;
               if (currentHistory.length > 0) {
                 currentHistory.forEach((item, idx) => {
                   if (item.type === 'message') {
@@ -370,6 +371,10 @@ Always be concise, helpful, and base responses on what the user was discussing. 
     // Listen to conversation history updates
     session.current.on('history_updated', (history: RealtimeItem[]) => {
       console.log('📜 History updated, total items:', history.length);
+
+      // Store history in ref for LLM context logging
+      sessionHistory.current = history;
+
       const newTranscripts: TranscriptItem[] = [];
       let latestUserText = '';
 
@@ -585,7 +590,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
       // Get the current session history
-      const currentHistory = session.current?.getHistory() || [];
+      const currentHistory = sessionHistory.current;
       if (currentHistory.length > 0) {
         currentHistory.forEach((item, idx) => {
           if (item.type === 'message') {
@@ -657,7 +662,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
       // Get the current session history
-      const currentHistory = session.current?.getHistory() || [];
+      const currentHistory = sessionHistory.current;
       if (currentHistory.length > 0) {
         currentHistory.forEach((item, idx) => {
           if (item.type === 'message') {
