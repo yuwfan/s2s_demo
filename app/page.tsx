@@ -276,35 +276,8 @@ Always be concise, helpful, and base responses on what the user was discussing.`
         }
       });
 
-      // Detect trigger phrases and create single audio response
-      if (latestUserText) {
-        const textLower = latestUserText.toLowerCase();
-        const quickHintDetected = textLower.includes(settings.quickHintPhrase.toLowerCase());
-        const fullGuidanceDetected = textLower.includes(settings.fullGuidancePhrase.toLowerCase());
-
-        if (quickHintDetected || fullGuidanceDetected) {
-          console.log(`🎯 Trigger detected: "${latestUserText}"`);
-          // Create a SINGLE audio response based on accumulated context
-          // The session already has all committed audio as context
-          const responseType = quickHintDetected ? 'quick hint' : 'full guidance';
-          const duration = quickHintDetected ? settings.quickHintDuration : settings.fullGuidanceDuration;
-
-          setTimeout(() => {
-            console.log(`📤 Creating ${responseType} response...`);
-            session.current?.transport?.sendEvent({
-              type: 'response.create',
-              response: {
-                modalities: ['text', 'audio'], // Request audio output for this response
-                instructions: `Provide a ${responseType} (around ${duration} seconds) based on the conversation context. ${
-                  quickHintDetected
-                    ? 'Be brief and actionable, 1-2 sentences.'
-                    : 'Be comprehensive with steps and examples.'
-                }`,
-              },
-            });
-          }, 100);
-        }
-      }
+      // Note: Trigger detection is handled in the transcription event handler above
+      // This history_updated handler is only for updating the transcript display
 
       setTranscripts(newTranscripts);
     });
@@ -429,33 +402,55 @@ Always be concise, helpful, and base responses on what the user was discussing.`
     }
   }
 
-  // Trigger response via button - create single audio response from accumulated context
+  // Trigger response via button - switch to audio mode and create response
   async function triggerQuickHint() {
     if (!session.current || !isConnected) return;
 
-    // Create a single audio response
-    // Session already has all committed audio turns as context
+    console.log('📤 Manual trigger: Quick Hint - switching to audio mode...');
+
+    // Switch to audio mode
     session.current.transport?.sendEvent({
-      type: 'response.create',
-      response: {
-        modalities: ['audio'], // Audio output only (add 'text' if you want transcript)
-        instructions: `Provide a quick hint (around ${settings.quickHintDuration} seconds) based on the recent conversation context. Be brief and actionable, 1-2 sentences.`,
+      type: 'session.update',
+      session: {
+        type: 'realtime',
+        output_modalities: ['text', 'audio'],
       },
     });
+
+    // Create response
+    setTimeout(() => {
+      session.current?.transport?.sendEvent({
+        type: 'response.create',
+        response: {
+          instructions: `Provide a quick hint (around ${settings.quickHintDuration} seconds) based on the recent conversation context. Be brief and actionable, 1-2 sentences.`,
+        },
+      });
+    }, 100);
   }
 
   async function triggerFullGuidance() {
     if (!session.current || !isConnected) return;
 
-    // Create a single audio response
-    // Session already has all committed audio turns as context
+    console.log('📤 Manual trigger: Full Guidance - switching to audio mode...');
+
+    // Switch to audio mode
     session.current.transport?.sendEvent({
-      type: 'response.create',
-      response: {
-        modalities: ['audio'], // Audio output only
-        instructions: `Provide full guidance (around ${settings.fullGuidanceDuration} seconds) based on the entire conversation context. Be comprehensive with steps and examples.`,
+      type: 'session.update',
+      session: {
+        type: 'realtime',
+        output_modalities: ['text', 'audio'],
       },
     });
+
+    // Create response
+    setTimeout(() => {
+      session.current?.transport?.sendEvent({
+        type: 'response.create',
+        response: {
+          instructions: `Provide full guidance (around ${settings.fullGuidanceDuration} seconds) based on the entire conversation context. Be comprehensive with steps and examples.`,
+        },
+      });
+    }, 100);
   }
 
   async function interruptAgent() {
