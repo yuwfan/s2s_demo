@@ -177,6 +177,12 @@ Always be concise, helpful, and base responses on what the user was discussing. 
         }
       }
 
+      // Confirm deletions (for debugging)
+      if (event.type === 'conversation.item.deleted') {
+        // @ts-ignore
+        console.log(`🗑️ Item deleted confirmed: ${event.item_id}`);
+      }
+
       // Listen for transcription completion
       if (event.type === 'conversation.item.input_audio_transcription.completed') {
         // @ts-ignore
@@ -268,7 +274,8 @@ Always be concise, helpful, and base responses on what the user was discussing. 
               },
             });
 
-            // Then create response (audio will be generated)
+            // Wait a moment before creating response
+            // This allows time for any pending events to process
             setTimeout(() => {
               const instructions = `RESPOND IN ENGLISH ONLY. Provide a ${responseType} (around ${duration} seconds) based on the conversation context. ${
                 quickHintDetected
@@ -318,6 +325,10 @@ Always be concise, helpful, and base responses on what the user was discussing. 
               console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
               console.groupEnd();
 
+              // For text mode, we don't rely on default conversation.
+              // Instead, we explicitly reference ONLY the text message we just created.
+              // The API uses the default conversation context automatically,
+              // but the deletions ensure only the text message remains.
               session.current?.transport?.sendEvent({
                 type: 'response.create',
                 response: {
