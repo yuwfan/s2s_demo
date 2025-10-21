@@ -107,7 +107,8 @@ Always be concise, helpful, and base responses on what the user was discussing.`
         session.current?.transport?.sendEvent({
           type: 'session.update',
           session: {
-            modalities: ['text'], // Text-only mode - prevents audio responses
+            output_modalities: ['text'], // Text-only mode - prevents audio responses
+            voice: 'alloy', // Keep voice config
             input_audio_transcription: {
               model: 'whisper-1', // Enable transcription
             },
