@@ -95,22 +95,11 @@ Always be concise, helpful, and base responses on what the user was discussing.`
         console.log('📡 Transport event:', event.type, event);
       }
 
-      // Configure server VAD for speech detection without auto-responses
-      // We want VAD events (speech_started/stopped) but manual response control
-      if (event.type === 'session.created') {
-        session.current?.transport?.sendEvent({
-          type: 'session.update',
-          session: {
-            turn_detection: {
-              type: 'server_vad',
-              threshold: 0.5,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 500,
-              create_response: false, // Don't auto-create responses
-            },
-          },
-        });
-      }
+      // Note: We don't configure turn_detection here
+      // In WebSocket mode with sendAudio(), the default behavior gives us:
+      // - speech_started/stopped events from server VAD
+      // - Manual control over when to commit audio
+      // - Manual control over when to create responses
 
       // Server VAD detected speech starting
       if (event.type === 'input_audio_buffer.speech_started') {
