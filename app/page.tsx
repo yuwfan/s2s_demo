@@ -225,35 +225,14 @@ Always be concise, helpful, and base responses on what the user was discussing. 
             setAgentState('generating');
 
             // Handle text input mode: combine transcripts into single message
+            let textModeMessage = '';
             if (settings.inputMode === 'text') {
-              const combinedUserMessage = accumulatedTranscripts.current.join(' ');
-              console.log(`🎯 [Text Mode] Trigger detected! Combined user message: "${combinedUserMessage}"`);
-              console.log(`📤 [Text Mode] Deleting ${audioItemIds.current.length} audio items and creating combined text message...`);
-
-              // Delete all the auto-created audio items
-              audioItemIds.current.forEach((itemId) => {
-                session.current?.transport?.sendEvent({
-                  type: 'conversation.item.delete',
-                  item_id: itemId,
-                });
-              });
+              textModeMessage = accumulatedTranscripts.current.join(' ');
+              console.log(`🎯 [Text Mode] Trigger detected! Combined user message: "${textModeMessage}"`);
 
               // Clear the tracked IDs and transcripts
               audioItemIds.current = [];
               accumulatedTranscripts.current = [];
-
-              // Add the combined user message as TEXT to the conversation
-              session.current?.transport?.sendEvent({
-                type: 'conversation.item.create',
-                item: {
-                  type: 'message',
-                  role: 'user',
-                  content: [{
-                    type: 'input_text',
-                    text: combinedUserMessage,
-                  }],
-                },
-              });
 
               // Clear the audio buffer (audio was only used for transcription)
               session.current?.transport?.sendEvent({
@@ -275,7 +254,6 @@ Always be concise, helpful, and base responses on what the user was discussing. 
             });
 
             // Wait a moment before creating response
-            // This allows time for any pending events to process
             setTimeout(() => {
               const instructions = `RESPOND IN ENGLISH ONLY. Provide a ${responseType} (around ${duration} seconds) based on the conversation context. ${
                 quickHintDetected
@@ -283,58 +261,93 @@ Always be concise, helpful, and base responses on what the user was discussing. 
                   : 'Be comprehensive with steps and examples.'
               }`;
 
-              // Log the complete request context being sent to the LLM
-              console.group('🤖 LLM Request Details (Voice Trigger)');
-              console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-              console.log('Trigger Type:', quickHintDetected ? 'Quick Hint' : 'Full Guidance');
-              console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-              console.log('\n📋 INSTRUCTIONS SENT TO LLM:');
-              console.log(instructions);
-              console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-              console.log('💬 CONVERSATION CONTEXT (Full Session History):');
-              console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
-              // Get the current session history
-              const currentHistory = sessionHistory.current;
-              if (currentHistory.length > 0) {
-                currentHistory.forEach((item, idx) => {
-                  if (item.type === 'message') {
-                    const role = item.role === 'user' ? '👤 USER' : '🤖 ASSISTANT';
-                    console.log(`\n${idx + 1}. ${role}:`);
-                    item.content.forEach((content) => {
-                      if (content.type === 'input_text') {
-                        console.log(`   [Text Input] ${content.text}`);
-                      } else if (content.type === 'output_text') {
-                        console.log(`   [Text Output] ${content.text}`);
-                      } else if (content.type === 'input_audio') {
-                        console.log(`   [Audio Input] "${content.transcript || '[No transcript]'}"`);
-                      } else if (content.type === 'output_audio') {
-                        console.log(`   [Audio Output] "${content.transcript || '[No transcript]'}"`);
-                      } else {
-                        console.log(`   [${content.type}]`, content);
-                      }
-                    });
-                  }
-                });
-              } else {
-                console.log('(No conversation history yet)');
-              }
-
-              console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-              console.log('ℹ️ The Realtime API will use ALL messages above as context for generating the response.');
-              console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-              console.groupEnd();
-
-              // For text mode, we don't rely on default conversation.
-              // Instead, we explicitly reference ONLY the text message we just created.
-              // The API uses the default conversation context automatically,
-              // but the deletions ensure only the text message remains.
-              session.current?.transport?.sendEvent({
+              // Prepare response creation event
+              let responseEvent: any = {
                 type: 'response.create',
                 response: {
                   instructions,
                 },
-              });
+              };
+
+              // In text mode, use explicit input instead of default conversation
+              if (settings.inputMode === 'text' && textModeMessage) {
+                console.group('🤖 LLM Request Details (Voice Trigger - Text Mode)');
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                console.log('Mode: TEXT INPUT (explicit context)');
+                console.log('Trigger Type:', quickHintDetected ? 'Quick Hint' : 'Full Guidance');
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                console.log('\n📋 INSTRUCTIONS SENT TO LLM:');
+                console.log(instructions);
+                console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                console.log('💬 EXPLICIT INPUT (bypassing default conversation):');
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                console.log('\n👤 USER:');
+                console.log(`   [Text Input] "${textModeMessage}"`);
+                console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                console.log('ℹ️ Using explicit input field - only the text message above will be used as context.');
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                console.groupEnd();
+
+                // Use explicit input array instead of default conversation
+                responseEvent.response.input = [
+                  {
+                    type: 'message',
+                    role: 'user',
+                    content: [
+                      {
+                        type: 'input_text',
+                        text: textModeMessage,
+                      },
+                    ],
+                  },
+                ];
+              } else {
+                // Audio mode: use default conversation with logging
+                console.group('🤖 LLM Request Details (Voice Trigger - Audio Mode)');
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                console.log('Mode: AUDIO INPUT (default conversation)');
+                console.log('Trigger Type:', quickHintDetected ? 'Quick Hint' : 'Full Guidance');
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                console.log('\n📋 INSTRUCTIONS SENT TO LLM:');
+                console.log(instructions);
+                console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                console.log('💬 CONVERSATION CONTEXT (Full Session History):');
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+                // Get the current session history
+                const currentHistory = sessionHistory.current;
+                if (currentHistory.length > 0) {
+                  currentHistory.forEach((item, idx) => {
+                    if (item.type === 'message') {
+                      const role = item.role === 'user' ? '👤 USER' : '🤖 ASSISTANT';
+                      console.log(`\n${idx + 1}. ${role}:`);
+                      item.content.forEach((content) => {
+                        if (content.type === 'input_text') {
+                          console.log(`   [Text Input] ${content.text}`);
+                        } else if (content.type === 'output_text') {
+                          console.log(`   [Text Output] ${content.text}`);
+                        } else if (content.type === 'input_audio') {
+                          console.log(`   [Audio Input] "${content.transcript || '[No transcript]'}"`);
+                        } else if (content.type === 'output_audio') {
+                          console.log(`   [Audio Output] "${content.transcript || '[No transcript]'}"`);
+                        } else {
+                          console.log(`   [${content.type}]`, content);
+                        }
+                      });
+                    }
+                  });
+                } else {
+                  console.log('(No conversation history yet)');
+                }
+
+                console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                console.log('ℹ️ The Realtime API will use the default conversation context shown above.');
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                console.groupEnd();
+              }
+
+              // Create the response
+              session.current?.transport?.sendEvent(responseEvent);
             }, 100);
           }
         }
