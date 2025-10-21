@@ -30,6 +30,7 @@ export default function Home() {
   // Agent states
   type AgentState = 'idle' | 'listening' | 'generating' | 'speaking';
   const [agentState, setAgentState] = useState<AgentState>('idle');
+  const isPlayingAudio = useRef(false); // Track if audio is actually playing
 
   const [isConnected, setIsConnected] = useState(false);
   const [isListening, setIsListening] = useState(true);
@@ -152,14 +153,16 @@ Always be concise, helpful, and base responses on what the user was discussing. 
         console.log('  create_response:', sessionData?.audio?.input?.turn_detection?.create_response);
       }
 
-      // Server VAD detected speech starting - interrupt immediately if agent is speaking
+      // Server VAD detected speech starting - interrupt immediately if audio is playing
       if (event.type === 'input_audio_buffer.speech_started') {
-        console.log('🎤 Speech started');
+        console.log(`🎤 Speech started - agentState: ${agentState}, isPlayingAudio: ${isPlayingAudio.current}`);
 
-        // IMMEDIATE barge-in: Stop agent as soon as user starts speaking
-        if (agentState === 'speaking' || agentState === 'generating') {
-          console.log(`⚡ BARGE-IN: User started speaking during ${agentState} - interrupting IMMEDIATELY`);
+        // IMMEDIATE barge-in: Stop agent if audio is playing OR if generating/speaking
+        if (isPlayingAudio.current || agentState === 'speaking' || agentState === 'generating') {
+          console.log(`⚡ BARGE-IN: User started speaking while audio playing - interrupting IMMEDIATELY`);
           interruptAgent();
+        } else {
+          console.log(`ℹ️ Speech started but no audio playing (agent state: ${agentState})`);
         }
       }
 
@@ -254,6 +257,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
       if (event.type === 'response.output_audio.delta') {
         console.log('🔊 Audio delta received, size:', event.delta?.length);
         setAgentState('speaking');
+        isPlayingAudio.current = true; // Mark that audio is playing
         // @ts-ignore - audio delta structure
         const audioData = event.delta;
         if (audioData && player.current) {
@@ -300,9 +304,10 @@ Always be concise, helpful, and base responses on what the user was discussing. 
           },
         });
 
-        // Keep state as 'speaking' until audio finishes or interrupted
-        // We'll transition to 'listening' after a delay or when interrupted
+        // Keep audio playing flag true for a bit longer to allow playback to finish
         setTimeout(() => {
+          console.log('🔇 Clearing audio playing flag');
+          isPlayingAudio.current = false;
           setAgentState((currentState) => {
             // Only transition if we haven't been interrupted
             if (currentState === 'speaking') {
@@ -311,7 +316,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
             }
             return currentState;
           });
-        }, 3000); // 3 second buffer for audio playback
+        }, 5000); // 5 second buffer for audio playback to complete
       }
 
       // Audio interruption is handled separately via the interruptAgent() function
@@ -565,11 +570,12 @@ Always be concise, helpful, and base responses on what the user was discussing. 
 
   async function interruptAgent() {
     if (!session.current || !isConnected) return;
-    if (agentState !== 'speaking' && agentState !== 'generating') return;
+    if (!isPlayingAudio.current && agentState !== 'speaking' && agentState !== 'generating') return;
 
-    console.log(`⛔ Interrupting agent (was ${agentState})...`);
+    console.log(`⛔ Interrupting agent (was ${agentState}, audio playing: ${isPlayingAudio.current})...`);
 
-    // IMMEDIATELY set state to listening FIRST
+    // IMMEDIATELY clear audio playing flag and set state to listening
+    isPlayingAudio.current = false;
     setAgentState('listening');
 
     try {
