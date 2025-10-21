@@ -29,6 +29,7 @@ export default function Home() {
   const [isConnected, setIsConnected] = useState(false);
   const [isListening, setIsListening] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isGeneratingResponse, setIsGeneratingResponse] = useState(false);
   const [settings, setSettings] = useState<VoiceSettings>(DEFAULT_SETTINGS);
   const [transcripts, setTranscripts] = useState<TranscriptItem[]>([]);
   const [events, setEvents] = useState<TransportEvent[]>([]);
@@ -64,7 +65,8 @@ Always be concise, helpful, and base responses on what the user was discussing. 
         voice: 'alloy',
         turn_detection: null, // Disable automatic turn detection
         input_audio_transcription: {
-          model: 'whisper-1', // Enable transcription
+          model: 'gpt-4o-transcribe', // More accurate real-time transcription
+          language: 'en', // Force English transcription
         },
       },
     });
@@ -114,7 +116,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
             audio: {
               input: {
                 transcription: {
-                  model: 'whisper-1', // Enable transcription for trigger detection
+                  model: 'gpt-4o-transcribe', // More accurate real-time transcription
                   language: 'en', // Force English transcription
                 },
                 turn_detection: {
@@ -169,7 +171,14 @@ Always be concise, helpful, and base responses on what the user was discussing. 
           const fullGuidanceDetected = textLower.includes(settings.fullGuidancePhrase.toLowerCase());
 
           if (quickHintDetected || fullGuidanceDetected) {
+            // Check if already generating a response
+            if (isGeneratingResponse) {
+              console.log('⚠️ Already generating response, ignoring trigger');
+              return;
+            }
+
             console.log(`🎯 Trigger detected: "${transcript}"`);
+            setIsGeneratingResponse(true);
 
             const responseType = quickHintDetected ? 'quick hint' : 'full guidance';
             const duration = quickHintDetected ? settings.quickHintDuration : settings.fullGuidanceDuration;
@@ -205,6 +214,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
       // Track response lifecycle for debugging
       if (event.type === 'response.created') {
         console.log('📝 Response created by server');
+        setIsGeneratingResponse(true);
       }
 
       if (event.type === 'response.output_item.added') {
@@ -237,6 +247,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
       if (event.type === 'response.done') {
         console.log('✅ Response complete - switching back to text-only mode');
         setIsSpeaking(false);
+        setIsGeneratingResponse(false); // Reset flag
 
         // Switch back to text-only mode (silent)
         session.current?.transport?.sendEvent({
@@ -417,9 +428,15 @@ Always be concise, helpful, and base responses on what the user was discussing. 
 
   // Trigger response via button - switch to audio mode and create response
   async function triggerQuickHint() {
-    if (!session.current || !isConnected) return;
+    if (!session.current || !isConnected || isGeneratingResponse) {
+      if (isGeneratingResponse) {
+        console.log('⚠️ Already generating response, ignoring button click');
+      }
+      return;
+    }
 
     console.log('📤 Manual trigger: Quick Hint - switching to audio mode...');
+    setIsGeneratingResponse(true);
 
     // Switch to audio mode
     session.current.transport?.sendEvent({
@@ -442,9 +459,15 @@ Always be concise, helpful, and base responses on what the user was discussing. 
   }
 
   async function triggerFullGuidance() {
-    if (!session.current || !isConnected) return;
+    if (!session.current || !isConnected || isGeneratingResponse) {
+      if (isGeneratingResponse) {
+        console.log('⚠️ Already generating response, ignoring button click');
+      }
+      return;
+    }
 
     console.log('📤 Manual trigger: Full Guidance - switching to audio mode...');
+    setIsGeneratingResponse(true);
 
     // Switch to audio mode
     session.current.transport?.sendEvent({
@@ -489,6 +512,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
     });
 
     setIsSpeaking(false);
+    setIsGeneratingResponse(false); // Reset flag when interrupting
   }
 
   return (
@@ -579,7 +603,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
               <div className="flex gap-3">
                 <Button
                   onClick={triggerQuickHint}
-                  disabled={!isConnected || isSpeaking}
+                  disabled={!isConnected || isGeneratingResponse}
                   variant="success"
                   className="flex-1"
                 >
@@ -587,7 +611,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
                 </Button>
                 <Button
                   onClick={triggerFullGuidance}
-                  disabled={!isConnected || isSpeaking}
+                  disabled={!isConnected || isGeneratingResponse}
                   variant="warning"
                   className="flex-1"
                 >
@@ -595,7 +619,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
                 </Button>
                 <Button
                   onClick={interruptAgent}
-                  disabled={!isConnected || !isSpeaking}
+                  disabled={!isConnected || !isGeneratingResponse}
                   variant="danger"
                 >
                   ⛔ Interrupt
