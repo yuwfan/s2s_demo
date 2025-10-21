@@ -228,14 +228,58 @@ Always be concise, helpful, and base responses on what the user was discussing. 
 
             // Then create response (audio will be generated)
             setTimeout(() => {
+              const instructions = `RESPOND IN ENGLISH ONLY. Provide a ${responseType} (around ${duration} seconds) based on the conversation context. ${
+                quickHintDetected
+                  ? 'Be brief and actionable, 1-2 sentences.'
+                  : 'Be comprehensive with steps and examples.'
+              }`;
+
+              // Log the complete request context being sent to the LLM
+              console.group('🤖 LLM Request Details (Voice Trigger)');
+              console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+              console.log('Trigger Type:', quickHintDetected ? 'Quick Hint' : 'Full Guidance');
+              console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+              console.log('\n📋 INSTRUCTIONS SENT TO LLM:');
+              console.log(instructions);
+              console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+              console.log('💬 CONVERSATION CONTEXT (Full Session History):');
+              console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+              // Get the current session history
+              const currentHistory = session.current?.getHistory() || [];
+              if (currentHistory.length > 0) {
+                currentHistory.forEach((item, idx) => {
+                  if (item.type === 'message') {
+                    const role = item.role === 'user' ? '👤 USER' : '🤖 ASSISTANT';
+                    console.log(`\n${idx + 1}. ${role}:`);
+                    item.content.forEach((content) => {
+                      if (content.type === 'input_text') {
+                        console.log(`   [Text Input] ${content.text}`);
+                      } else if (content.type === 'output_text') {
+                        console.log(`   [Text Output] ${content.text}`);
+                      } else if (content.type === 'input_audio') {
+                        console.log(`   [Audio Input] "${content.transcript || '[No transcript]'}"`);
+                      } else if (content.type === 'output_audio') {
+                        console.log(`   [Audio Output] "${content.transcript || '[No transcript]'}"`);
+                      } else {
+                        console.log(`   [${content.type}]`, content);
+                      }
+                    });
+                  }
+                });
+              } else {
+                console.log('(No conversation history yet)');
+              }
+
+              console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+              console.log('ℹ️ The Realtime API will use ALL messages above as context for generating the response.');
+              console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+              console.groupEnd();
+
               session.current?.transport?.sendEvent({
                 type: 'response.create',
                 response: {
-                  instructions: `RESPOND IN ENGLISH ONLY. Provide a ${responseType} (around ${duration} seconds) based on the conversation context. ${
-                    quickHintDetected
-                      ? 'Be brief and actionable, 1-2 sentences.'
-                      : 'Be comprehensive with steps and examples.'
-                  }`,
+                  instructions,
                 },
               });
             }, 100);
@@ -529,10 +573,52 @@ Always be concise, helpful, and base responses on what the user was discussing. 
 
     // Create response
     setTimeout(() => {
+      const instructions = `RESPOND IN ENGLISH ONLY. Provide a quick hint (around ${settings.quickHintDuration} seconds) based on the recent conversation context. Be brief and actionable, 1-2 sentences.`;
+
+      // Log the complete request context being sent to the LLM
+      console.group('🤖 LLM Request Details (Manual Quick Hint Button)');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('\n📋 INSTRUCTIONS SENT TO LLM:');
+      console.log(instructions);
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('💬 CONVERSATION CONTEXT (Full Session History):');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+      // Get the current session history
+      const currentHistory = session.current?.getHistory() || [];
+      if (currentHistory.length > 0) {
+        currentHistory.forEach((item, idx) => {
+          if (item.type === 'message') {
+            const role = item.role === 'user' ? '👤 USER' : '🤖 ASSISTANT';
+            console.log(`\n${idx + 1}. ${role}:`);
+            item.content.forEach((content) => {
+              if (content.type === 'input_text') {
+                console.log(`   [Text Input] ${content.text}`);
+              } else if (content.type === 'output_text') {
+                console.log(`   [Text Output] ${content.text}`);
+              } else if (content.type === 'input_audio') {
+                console.log(`   [Audio Input] "${content.transcript || '[No transcript]'}"`);
+              } else if (content.type === 'output_audio') {
+                console.log(`   [Audio Output] "${content.transcript || '[No transcript]'}"`);
+              } else {
+                console.log(`   [${content.type}]`, content);
+              }
+            });
+          }
+        });
+      } else {
+        console.log('(No conversation history yet)');
+      }
+
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('ℹ️ The Realtime API will use ALL messages above as context for generating the response.');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.groupEnd();
+
       session.current?.transport?.sendEvent({
         type: 'response.create',
         response: {
-          instructions: `RESPOND IN ENGLISH ONLY. Provide a quick hint (around ${settings.quickHintDuration} seconds) based on the recent conversation context. Be brief and actionable, 1-2 sentences.`,
+          instructions,
         },
       });
     }, 100);
@@ -559,10 +645,52 @@ Always be concise, helpful, and base responses on what the user was discussing. 
 
     // Create response
     setTimeout(() => {
+      const instructions = `RESPOND IN ENGLISH ONLY. Provide full guidance (around ${settings.fullGuidanceDuration} seconds) based on the entire conversation context. Be comprehensive with steps and examples.`;
+
+      // Log the complete request context being sent to the LLM
+      console.group('🤖 LLM Request Details (Manual Full Guidance Button)');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('\n📋 INSTRUCTIONS SENT TO LLM:');
+      console.log(instructions);
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('💬 CONVERSATION CONTEXT (Full Session History):');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+      // Get the current session history
+      const currentHistory = session.current?.getHistory() || [];
+      if (currentHistory.length > 0) {
+        currentHistory.forEach((item, idx) => {
+          if (item.type === 'message') {
+            const role = item.role === 'user' ? '👤 USER' : '🤖 ASSISTANT';
+            console.log(`\n${idx + 1}. ${role}:`);
+            item.content.forEach((content) => {
+              if (content.type === 'input_text') {
+                console.log(`   [Text Input] ${content.text}`);
+              } else if (content.type === 'output_text') {
+                console.log(`   [Text Output] ${content.text}`);
+              } else if (content.type === 'input_audio') {
+                console.log(`   [Audio Input] "${content.transcript || '[No transcript]'}"`);
+              } else if (content.type === 'output_audio') {
+                console.log(`   [Audio Output] "${content.transcript || '[No transcript]'}"`);
+              } else {
+                console.log(`   [${content.type}]`, content);
+              }
+            });
+          }
+        });
+      } else {
+        console.log('(No conversation history yet)');
+      }
+
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('ℹ️ The Realtime API will use ALL messages above as context for generating the response.');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.groupEnd();
+
       session.current?.transport?.sendEvent({
         type: 'response.create',
         response: {
-          instructions: `RESPOND IN ENGLISH ONLY. Provide full guidance (around ${settings.fullGuidanceDuration} seconds) based on the entire conversation context. Be comprehensive with steps and examples.`,
+          instructions,
         },
       });
     }, 100);
