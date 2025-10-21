@@ -65,19 +65,22 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       // Log errors for debugging
       if (event.type === 'error') {
         console.error('Transport error event:', event);
+        console.error('Error event stringified:', JSON.stringify(event, null, 2));
+        console.error('Error event keys:', Object.keys(event));
+        // @ts-ignore - explore error structure
+        console.error('Error message:', event.error?.message);
+        // @ts-ignore
+        console.error('Error code:', event.error?.code);
+        // @ts-ignore
+        console.error('Error type:', event.error?.type);
       }
 
-      // Configure session after it's created
+      // Session created - WebRTC mode
       if (event.type === 'session.created') {
-        // Set up for silent listening in WebRTC mode:
-        // - Disable turn_detection so agent doesn't auto-respond
-        // - WebRTC automatically handles audio streaming and transcription
-        session.current?.transport?.sendEvent({
-          type: 'session.update',
-          session: {
-            turn_detection: null, // Disable auto-response - we'll trigger manually
-          },
-        });
+        // In WebRTC mode, audio is automatically handled
+        // We don't configure turn_detection at all - it defaults to disabled
+        // We'll manually create responses on trigger
+        console.log('Session created, ready for listening');
       }
 
       // Track when agent starts/stops speaking
