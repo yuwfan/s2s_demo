@@ -1,102 +1,119 @@
-# Modality Switching Implementation Guide
+# Context Accumulation Pattern - Implementation Guide
+
+**Note**: This guide has been updated to reflect the correct pattern for trigger-based voice agents.
 
 ## Problem Statement
 
 **Original Issue**: Agent was responding to every user input instead of staying silent until triggered.
 
-**Why Instructions Failed**: 
-- Telling the agent "don't respond unless triggered" is unreliable
-- GPT models interpret instructions flexibly
-- They may still respond "helpfully" despite instructions
-- Turn detection (server_vad) auto-triggered responses on silence
+**Why Previous Approaches Failed**:
+- **Instructions**: Telling agent "don't respond" is unreliable - models interpret flexibly
+- **Modality switching**: Complex and doesn't match the API's intended pattern
+- **Turn detection with server_vad**: Auto-triggers responses on silence
 
-## Solution: Modality-Based Silence
+## Solution: Context Accumulation Pattern
 
-Instead of relying on instructions, we use **API-enforced modality control**.
+The correct approach is **continuous context collection + triggered response**.
 
 ### Key Insight
 
-**In text-only mode, the agent CANNOT produce audio** - it's not a behavioral choice, it's an API constraint.
+**Feed audio into the session continuously to build context, but only create a response when explicitly triggered.**
+
+This matches how the Realtime API is designed to work:
 
 ## Implementation
 
-### 1. Default State: Silent Listening
+### 1. Silent Context Collection Mode
 
 ```typescript
 session.current = new RealtimeSession(agent, {
   model: 'gpt-realtime',
   config: {
-    modalities: ['text'],  // ← Text only = No audio output possible
-    voice: 'alloy',        // ← Configured but unused until audio mode
-    turn_detection: {
-      type: 'server_vad',  // ← Enable continuous listening
-      threshold: 0.5,
-      prefix_padding_ms: 300,
-      silence_duration_ms: 500,
-    },
+    voice: 'alloy',
   },
 });
-```
 
-**What happens:**
-- Microphone stays open
-- Server VAD detects speech
-- Speech → Text transcription
-- Agent receives transcripts but **cannot speak**
-
-### 2. Trigger Detection
-
-```typescript
-session.current.on('history_updated', (history) => {
-  // ... extract latest user text ...
-  
-  const quickHintDetected = text.includes('good question');
-  const fullGuidanceDetected = text.includes('let me think');
-  
-  if (quickHintDetected || fullGuidanceDetected) {
-    // Switch to audio mode and trigger response
-    triggerAudioResponse(context);
+// After session.created, configure for silent listening
+session.current.on('transport_event', (event) => {
+  if (event.type === 'session.created') {
+    session.current.transport.sendEvent({
+      type: 'session.update',
+      session: {
+        turn_detection: null, // ← Disable auto-response
+        input_audio_transcription: {
+          model: 'whisper-1', // ← Enable transcription
+        },
+      },
+    });
   }
 });
 ```
 
-### 3. Switch to Audio Mode
+**What happens:**
+- Microphone captures audio
+- Audio streams to server
+- Whisper transcribes to text
+- **No responses created** - just collecting context
+
+### 2. Manual Audio Commitment
 
 ```typescript
-function triggerAudioResponse(context) {
-  // Step 1: Enable audio in session
+session.current.on('transport_event', (event) => {
+  // When user stops speaking
+  if (event.type === 'input_audio_buffer.speech_stopped') {
+    // Commit the audio to add it to conversation context
+    session.current.transport.sendEvent({
+      type: 'input_audio_buffer.commit',
+    });
+  }
+
+  // Audio is now part of the conversation
+  if (event.type === 'conversation.item.created') {
+    // Context updated - don't create response yet
+  }
+});
+```
+
+### 3. Trigger Detection
+
+```typescript
+session.current.on('history_updated', (history) => {
+  // ... extract latest user text ...
+
+  const quickHintDetected = text.includes('good question');
+  const fullGuidanceDetected = text.includes('let me think');
+
+  if (quickHintDetected || fullGuidanceDetected) {
+    // Create a SINGLE audio response
+    createTriggeredResponse();
+  }
+});
+```
+
+### 4. Create Triggered Response
+
+```typescript
+function createTriggeredResponse() {
+  // Create a single response using accumulated context
   session.current.transport.sendEvent({
-    type: 'session.update',
-    session: {
-      modalities: ['text', 'audio'],  // ← Now audio is enabled
+    type: 'response.create',
+    response: {
+      modalities: ['text', 'audio'], // ← Request audio output
+      instructions: 'Provide guidance based on conversation context',
     },
   });
-  
-  // Step 2: Create response with audio
-  setTimeout(() => {
-    session.current.transport.sendEvent({
-      type: 'response.create',
-      response: {
-        modalities: ['text', 'audio'],  // ← This response includes audio
-        instructions: `Provide guidance based on: "${context}"`,
-      },
-    });
-  }, 100);
+  // Session already has all committed audio as context!
 }
 ```
 
-### 4. Automatic Return to Silence
+### 5. Return to Silence
 
 ```typescript
 session.current.on('transport_event', (event) => {
   if (event.type === 'response.done') {
-    // Response finished, switch back to text-only
-    session.current.transport.sendEvent({
-      type: 'session.update',
-      session: {
-        modalities: ['text'],  // ← Silent again
-      },
-    });
+    // Response finished
+    // Just don't create another response - back to silent listening
+    // Continue collecting audio context for next trigger
   }
 });
 ```
@@ -104,60 +121,85 @@ session.current.on('transport_event', (event) => {
 ## State Flow
 
 ```
-[TEXT MODE - Silent] 
+[SILENT LISTENING - Collecting Context]
       ↓
    User speaks: "What is 2+2?"
       ↓
-   [TEXT MODE - Transcribed, stays silent]
+   input_audio_buffer.speech_stopped
+      ↓
+   Send: input_audio_buffer.commit
+      ↓
+   conversation.item.created (audio added to context)
+      ↓
+   [SILENT - Context accumulated, no response]
       ↓
    User speaks: "Good question"
       ↓
-   Trigger detected!
+   input_audio_buffer.speech_stopped → commit
       ↓
-   [Switch to AUDIO MODE]
+   Trigger phrase detected!
       ↓
-   [Generate audio response]
+   Send: response.create (with audio modality)
+      ↓
+   [Generate audio response using ALL accumulated context]
       ↓
    [Play response to user]
       ↓
    response.done event
       ↓
-   [Switch back to TEXT MODE - Silent]
+   [Back to SILENT LISTENING - Continue collecting context]
 ```
 
 ## Key Events
 
-### session.update
+### input_audio_buffer.speech_stopped
 ```typescript
 {
-  type: 'session.update',
-  session: {
-    modalities: ['text']           // or ['text', 'audio']
+  type: 'input_audio_buffer.speech_stopped'
+}
+```
+Fired when silence is detected. Time to commit the audio.
+
+### input_audio_buffer.commit
+```typescript
+{
+  type: 'input_audio_buffer.commit'
+}
+```
+Commits buffered audio to the conversation as context.
+
+### conversation.item.created
+```typescript
+{
+  type: 'conversation.item.created',
+  item: {
+    type: 'message',
+    role: 'user',
+    content: [{ type: 'input_audio', transcript: '...' }]
   }
 }
 ```
-Changes the session configuration mid-session.
+Audio has been added to conversation context.
 
 ### response.create
 ```typescript
 {
   type: 'response.create',
   response: {
-    modalities: ['text', 'audio'],  // What this response includes
-    instructions: '...'              // Context for this specific response
+    modalities: ['text', 'audio'],  // Request audio output
+    instructions: '...'              // Context for this response
   }
 }
 ```
-Creates a single response with specified modalities.
+Creates a single response. Session context is automatically included.
 
 ### response.done
 ```typescript
 {
-  type: 'response.done',
-  // ... response details
+  type: 'response.done'
 }
 ```
-Signals response completion. We use this to switch back to text-only.
+Response complete. Back to silent listening.
 
 ## Manual Triggers
 
