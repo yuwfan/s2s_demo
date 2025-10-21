@@ -1,0 +1,137 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║                   VOICE AGENT DEMO - GETTING STARTED                     ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+📦 QUICK SETUP (3 Steps)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Set your OpenAI API Key
+   $ echo "OPENAI_API_KEY=sk-your-key-here" > .env
+
+2. Install dependencies (already done!)
+   $ pnpm install
+
+3. Start the server
+   $ pnpm dev
+
+4. Open http://localhost:3000
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 WHAT YOU'VE BUILT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ Always-listening voice agent
+✅ Trigger phrase detection ("good question", "let me think")
+✅ Two response levels (quick hint + full guidance)
+✅ Interrupt support ("got it", "thanks", "stop")
+✅ Manual trigger buttons
+✅ Live transcript display
+✅ Customizable settings
+✅ Real-time status indicators
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎤 HOW TO USE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Click "Connect" button
+2. Allow microphone access
+3. Start talking naturally
+4. Say "good question" for quick hint (10s)
+5. Say "let me think" for full guidance (20s)
+6. Say "got it" to interrupt
+
+OR use the manual buttons:
+🚀 Quick Hint button
+💡 Full Guidance button
+⛔ Interrupt button
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📁 PROJECT STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+app/
+  page.tsx              → Main voice agent logic (290 lines)
+  layout.tsx            → Root layout
+  globals.css           → Styles
+  server/
+    token.action.tsx    → Secure OpenAI token generation
+
+components/
+  TranscriptDisplay.tsx → Live conversation view
+  SettingsPanel.tsx     → Configuration UI
+  ui/
+    Button.tsx          → Reusable button component
+    utils.ts            → Helper functions
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📚 DOCUMENTATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+README.md            → Full documentation & usage guide
+QUICKSTART.md        → Step-by-step getting started
+ARCHITECTURE.md      → System architecture & data flow
+FEATURES.md          → Feature checklist & testing
+PROJECT_SUMMARY.md   → Technical overview
+GETTING_STARTED.txt  → This file!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 CUSTOMIZATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+• Change trigger phrases in the Settings panel (before connecting)
+• Adjust response durations (5-120 seconds)
+• Modify agent personality in app/page.tsx (line ~50)
+• Customize UI colors in Tailwind config
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🚀 DEPLOYMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Ready to deploy to Vercel:
+
+1. Push to GitHub
+2. Import to Vercel
+3. Add OPENAI_API_KEY environment variable
+4. Deploy!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+❓ TROUBLESHOOTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Problem: Can't connect
+→ Check .env file has correct API key
+→ Ensure OpenAI account has Realtime API access
+
+Problem: Microphone not working
+→ Allow microphone permission in browser
+→ Use HTTPS or localhost
+→ Check browser console for errors
+
+Problem: Triggers not working
+→ Check transcript to see if speech recognized
+→ Try manual buttons instead
+→ Speak clearly and wait for blue "Listening" indicator
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💡 TIPS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✓ Configure settings BEFORE connecting (they lock during session)
+✓ Watch the status indicators (green=connected, blue=listening, purple=speaking)
+✓ Use manual buttons if voice triggers don't work
+✓ Check the event log if something seems wrong
+✓ Transcript updates in real-time - use it to verify what agent hears
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Need help? Check the README.md for detailed documentation!
+
+Happy coding! 🎉
