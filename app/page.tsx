@@ -53,15 +53,27 @@ Always be concise, helpful, and base responses on what the user was discussing.`
     session.current = new RealtimeSession(agent, {
       model: 'gpt-realtime',
       config: {
-        modalities: ['text'], // Start in text-only mode (listening without speaking)
-        voice: 'alloy', // Voice to use when we switch to audio mode
-        turn_detection: {
-          type: 'server_vad', // Enable VAD so it keeps listening
-          threshold: 0.5,
-          prefix_padding_ms: 300,
-          silence_duration_ms: 500,
-        },
+        voice: 'alloy',
       },
+    });
+
+    // Configure session for text-only mode with server VAD after connection
+    session.current.on('transport_event', (event) => {
+      if (event.type === 'session.created') {
+        // Set up text-only mode with server VAD
+        session.current?.transport?.sendEvent({
+          type: 'session.update',
+          session: {
+            modalities: ['text'],
+            turn_detection: {
+              type: 'server_vad',
+              threshold: 0.5,
+              prefix_padding_ms: 300,
+              silence_duration_ms: 500,
+            },
+          },
+        });
+      }
     });
 
     // Listen to all transport events
@@ -257,7 +269,9 @@ Always be concise, helpful, and base responses on what the user was discussing.`
     if (!session.current || !isConnected || !isSpeaking) return;
 
     // Cancel the current response
-    await session.current.cancelResponse();
+    session.current.transport?.sendEvent({
+      type: 'response.cancel',
+    });
     setIsSpeaking(false);
 
     // Switch back to text-only mode
