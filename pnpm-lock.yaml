@@ -32,6 +32,9 @@ importers:
       tailwind-merge:
         specifier: ^3.3.0
         version: 3.3.1
+      wavtools:
+        specifier: ^0.1.5
+        version: 0.1.5
       zod:
         specifier: ^3.25.40
         version: 3.25.76
@@ -944,6 +947,9 @@ packages:
   vary@1.1.2:
     resolution: {integrity: sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==}
     engines: {node: '>= 0.8'}
+
+  wavtools@0.1.5:
+    resolution: {integrity: sha512-npKxMSOKMLItDk5jTZ2W/sfXOIVbv0/UId1C96Zhtm7UgmKBS4WjliK7qWpKniQvNIMH2URoRANDBMWHAyGAlg==}
 
   which@2.0.2:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
@@ -1898,6 +1904,8 @@ snapshots:
 
   vary@1.1.2:
     optional: true
+
+  wavtools@0.1.5: {}
 
   which@2.0.2:
     dependencies:

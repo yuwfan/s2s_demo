@@ -7,6 +7,7 @@ import {
   RealtimeItem,
 } from '@openai/agents/realtime';
 import { useEffect, useRef, useState } from 'react';
+import { WavRecorder, WavStreamPlayer } from 'wavtools';
 import { getToken } from './server/token.action';
 import { Button } from '@/components/ui/Button';
 import { TranscriptDisplay, TranscriptItem } from '@/components/TranscriptDisplay';
@@ -22,13 +23,15 @@ const DEFAULT_SETTINGS: VoiceSettings = {
 
 export default function Home() {
   const session = useRef<RealtimeSession<any> | null>(null);
+  const recorder = useRef<WavRecorder | null>(null);
+  const player = useRef<WavStreamPlayer | null>(null);
+
   const [isConnected, setIsConnected] = useState(false);
   const [isListening, setIsListening] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [settings, setSettings] = useState<VoiceSettings>(DEFAULT_SETTINGS);
   const [transcripts, setTranscripts] = useState<TranscriptItem[]>([]);
   const [events, setEvents] = useState<TransportEvent[]>([]);
-  const [currentTranscript, setCurrentTranscript] = useState('');
   const [conversationHistory, setConversationHistory] = useState<string[]>([]);
 
   // Create agent with simplified instructions for triggered responses
@@ -50,47 +53,64 @@ Always be concise, helpful, and base responses on what the user was discussing.`
   useEffect(() => {
     const agent = createAgent(settings);
 
+    // Use WebSocket transport for manual audio control
     session.current = new RealtimeSession(agent, {
+      transport: 'websocket',
       model: 'gpt-realtime',
       config: {
         voice: 'alloy',
       },
     });
 
-    // Handle all transport events in one listener
+    // Set up audio recorder and player
+    recorder.current = new WavRecorder({ sampleRate: 24000 });
+    player.current = new WavStreamPlayer({ sampleRate: 24000 });
+
+    // Handle all transport events
     session.current.on('transport_event', (event) => {
-      // Log all events
       setEvents((prev) => [...prev, event]);
 
-      // Log errors for debugging
-      if (event.type === 'error') {
-        console.error('Transport error event:', event);
-        console.error('Error event stringified:', JSON.stringify(event, null, 2));
-        console.error('Error event keys:', Object.keys(event));
-        // @ts-ignore - explore error structure
-        console.error('Error message:', event.error?.message);
-        // @ts-ignore
-        console.error('Error code:', event.error?.code);
-        // @ts-ignore
-        console.error('Error type:', event.error?.type);
-      }
-
-      // Session created - WebRTC mode
+      // Configure server VAD for automatic turn detection (without auto-response)
       if (event.type === 'session.created') {
-        // In WebRTC mode, audio is automatically handled
-        // We don't configure turn_detection at all - it defaults to disabled
-        // We'll manually create responses on trigger
-        console.log('Session created, ready for listening');
+        session.current?.transport?.sendEvent({
+          type: 'session.update',
+          session: {
+            turn_detection: {
+              type: 'server_vad',
+              threshold: 0.5,
+              prefix_padding_ms: 300,
+              silence_duration_ms: 500,
+            },
+            // Omit input_audio_transcription - we don't need interim transcripts
+          },
+        });
       }
 
-      // Track when agent starts/stops speaking
+      // Server VAD detected end of speech - commit the audio
+      if (event.type === 'input_audio_buffer.speech_stopped') {
+        session.current?.transport?.sendEvent({
+          type: 'input_audio_buffer.commit',
+        });
+      }
+
+      // Handle audio output
       if (event.type === 'response.audio.delta') {
         setIsSpeaking(true);
+        // @ts-ignore - audio delta structure
+        const audioData = event.delta;
+        if (audioData && player.current) {
+          // @ts-ignore
+          player.current.add16BitPCM(audioData, event.item_id);
+        }
       }
+
       if (event.type === 'response.done') {
         setIsSpeaking(false);
-        // Response complete - back to silent listening mode
-        // No need to switch modalities, just don't create another response
+      }
+
+      // Handle audio interruption
+      if (event.type === 'response.audio_transcript.done' || event.type === 'conversation.item.input_audio_transcription.completed') {
+        player.current?.interrupt();
       }
     });
 
@@ -175,18 +195,29 @@ Always be concise, helpful, and base responses on what the user was discussing.`
     };
   }, [settings]);
 
+  async function startRecording() {
+    await recorder.current?.record(async (data: any) => {
+      // Send audio to the session
+      await session.current?.sendAudio(data.mono as unknown as ArrayBuffer);
+    });
+  }
+
   async function connect() {
     if (isConnected) {
       await session.current?.close();
+      await player.current?.interrupt();
+      await recorder.current?.end();
       setIsConnected(false);
-      setIsSpeaking(false);
-      setIsListening(true);
+      setIsListening(false);
     } else {
+      await player.current?.connect();
       const token = await getToken();
       try {
         await session.current?.connect({
           apiKey: token,
         });
+        await recorder.current?.begin();
+        await startRecording();
         setIsConnected(true);
         setIsListening(true);
       } catch (error) {
@@ -197,10 +228,10 @@ Always be concise, helpful, and base responses on what the user was discussing.`
 
   async function toggleMute() {
     if (isListening) {
-      await session.current?.mute(true);
+      await recorder.current?.pause();
       setIsListening(false);
     } else {
-      await session.current?.mute(false);
+      await startRecording();
       setIsListening(true);
     }
   }
@@ -210,11 +241,11 @@ Always be concise, helpful, and base responses on what the user was discussing.`
     if (!session.current || !isConnected) return;
 
     // Create a single audio response
-    // Session already has all committed audio as context
+    // Session already has all committed audio turns as context
     session.current.transport?.sendEvent({
       type: 'response.create',
       response: {
-        modalities: ['text', 'audio'], // Request audio output
+        modalities: ['audio'], // Audio output only (add 'text' if you want transcript)
         instructions: `Provide a quick hint (around ${settings.quickHintDuration} seconds) based on the recent conversation context. Be brief and actionable, 1-2 sentences.`,
       },
     });
@@ -224,11 +255,11 @@ Always be concise, helpful, and base responses on what the user was discussing.`
     if (!session.current || !isConnected) return;
 
     // Create a single audio response
-    // Session already has all committed audio as context
+    // Session already has all committed audio turns as context
     session.current.transport?.sendEvent({
       type: 'response.create',
       response: {
-        modalities: ['text', 'audio'], // Request audio output
+        modalities: ['audio'], // Audio output only
         instructions: `Provide full guidance (around ${settings.fullGuidanceDuration} seconds) based on the entire conversation context. Be comprehensive with steps and examples.`,
       },
     });
