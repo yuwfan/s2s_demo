@@ -259,6 +259,13 @@ Always be concise, helpful, and base responses on what the user was discussing. 
         }
       }
 
+      // Track when audio actually finishes playing (not just generated)
+      if (event.type === 'response.output_audio.done') {
+        console.log('🔇 Audio output complete');
+        // Don't set isSpeaking to false here - let it play out
+        // We'll set it to false when interrupted or when player finishes
+      }
+
       // Capture audio transcript when it completes
       if (event.type === 'response.output_audio_transcript.done') {
         console.log('🎯 Output audio transcript done event received!', event);
@@ -274,11 +281,11 @@ Always be concise, helpful, and base responses on what the user was discussing. 
       }
 
       if (event.type === 'response.done') {
-        console.log('✅ Response complete - switching back to text-only mode');
-        setIsSpeaking(false);
+        console.log('✅ Response generation complete - switching back to text-only mode');
+        // DON'T set isSpeaking to false yet - audio might still be playing
         setIsGeneratingResponse(false); // Reset flag
 
-        // Switch back to text-only mode (silent)
+        // Switch back to text-only mode (silent) for future responses
         session.current?.transport?.sendEvent({
           type: 'session.update',
           session: {
@@ -286,6 +293,13 @@ Always be concise, helpful, and base responses on what the user was discussing. 
             output_modalities: ['text'], // Back to text-only (silent)
           },
         });
+
+        // Set isSpeaking to false after a delay to allow audio to finish
+        // This is a workaround - ideally we'd track when WavStreamPlayer finishes
+        setTimeout(() => {
+          console.log('🔇 Clearing isSpeaking state after playback delay');
+          setIsSpeaking(false);
+        }, 2000); // 2 second buffer
       }
 
       // Audio interruption is handled separately via the interruptAgent() function
