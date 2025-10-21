@@ -32,6 +32,7 @@ export default function Home() {
   // For text input mode: accumulate transcripts and track audio items
   const accumulatedTranscripts = useRef<string[]>([]); // Accumulate user transcripts before trigger
   const audioItemIds = useRef<string[]>([]); // Track audio item IDs to delete when creating combined message
+  const textConversationHistory = useRef<any[]>([]); // Maintain text-only conversation history for multi-turn
 
   // Agent states
   type AgentState = 'idle' | 'listening' | 'generating' | 'speaking';
@@ -230,6 +231,18 @@ Always be concise, helpful, and base responses on what the user was discussing. 
               textModeMessage = accumulatedTranscripts.current.join(' ');
               console.log(`🎯 [Text Mode] Trigger detected! Combined user message: "${textModeMessage}"`);
 
+              // Add the user message to text conversation history
+              textConversationHistory.current.push({
+                type: 'message',
+                role: 'user',
+                content: [
+                  {
+                    type: 'input_text',
+                    text: textModeMessage,
+                  },
+                ],
+              });
+
               // Clear the tracked IDs and transcripts
               audioItemIds.current = [];
               accumulatedTranscripts.current = [];
@@ -269,38 +282,39 @@ Always be concise, helpful, and base responses on what the user was discussing. 
                 },
               };
 
-              // In text mode, use explicit input instead of default conversation
+              // In text mode, use explicit input with full conversation history
               if (settings.inputMode === 'text' && textModeMessage) {
                 console.group('🤖 LLM Request Details (Voice Trigger - Text Mode)');
                 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                console.log('Mode: TEXT INPUT (explicit context)');
+                console.log('Mode: TEXT INPUT (explicit multi-turn context)');
                 console.log('Trigger Type:', quickHintDetected ? 'Quick Hint' : 'Full Guidance');
                 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
                 console.log('\n📋 INSTRUCTIONS SENT TO LLM:');
                 console.log(instructions);
                 console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                console.log('💬 EXPLICIT INPUT (bypassing default conversation):');
+                console.log('💬 EXPLICIT INPUT (full text conversation history):');
                 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                console.log('\n👤 USER:');
-                console.log(`   [Text Input] "${textModeMessage}"`);
+
+                // Log the full text conversation history
+                textConversationHistory.current.forEach((msg, idx) => {
+                  const role = msg.role === 'user' ? '👤 USER' : '🤖 ASSISTANT';
+                  console.log(`\n${idx + 1}. ${role}:`);
+                  msg.content.forEach((content: any) => {
+                    if (content.type === 'input_text') {
+                      console.log(`   [Text Input] "${content.text}"`);
+                    } else if (content.type === 'output_text') {
+                      console.log(`   [Text Output] "${content.text}"`);
+                    }
+                  });
+                });
+
                 console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                console.log('ℹ️ Using explicit input field - only the text message above will be used as context.');
+                console.log(`ℹ️ Using explicit input field with ${textConversationHistory.current.length} messages (multi-turn conversation).`);
                 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
                 console.groupEnd();
 
-                // Use explicit input array instead of default conversation
-                responseEvent.response.input = [
-                  {
-                    type: 'message',
-                    role: 'user',
-                    content: [
-                      {
-                        type: 'input_text',
-                        text: textModeMessage,
-                      },
-                    ],
-                  },
-                ];
+                // Use explicit input array with full conversation history
+                responseEvent.response.input = textConversationHistory.current;
               } else {
                 // Audio mode: use default conversation with logging
                 console.group('🤖 LLM Request Details (Voice Trigger - Audio Mode)');
@@ -404,6 +418,44 @@ Always be concise, helpful, and base responses on what the user was discussing. 
 
       if (event.type === 'response.done') {
         console.log('✅ Response generation complete - switching back to text-only mode');
+
+        // In text mode, capture the assistant's response transcript and add to history
+        if (settings.inputMode === 'text') {
+          // @ts-ignore
+          const response = event.response;
+          // The response output contains the assistant's message
+          if (response?.output && response.output.length > 0) {
+            const assistantOutput = response.output[0];
+
+            // Extract text transcript from the response
+            let assistantText = '';
+
+            // Check for audio transcript first (since we generate audio responses)
+            if (assistantOutput.type === 'message') {
+              assistantOutput.content?.forEach((content: any) => {
+                if (content.type === 'audio' && content.transcript) {
+                  assistantText = content.transcript;
+                } else if (content.type === 'text') {
+                  assistantText = content.text;
+                }
+              });
+            }
+
+            if (assistantText) {
+              console.log(`💾 [Text Mode] Adding assistant response to history: "${assistantText.substring(0, 50)}..."`);
+              textConversationHistory.current.push({
+                type: 'message',
+                role: 'assistant',
+                content: [
+                  {
+                    type: 'output_text',
+                    text: assistantText,
+                  },
+                ],
+              });
+            }
+          }
+        }
 
         // Clear accumulated data for next turn (both modes)
         accumulatedTranscripts.current = [];
