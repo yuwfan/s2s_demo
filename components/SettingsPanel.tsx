@@ -2,12 +2,15 @@
 
 import { Button } from './ui/Button';
 
+export type InputMode = 'audio' | 'text';
+
 export type VoiceSettings = {
   quickHintPhrase: string;
   fullGuidancePhrase: string;
   interruptPhrases: string[];
   quickHintDuration: number;
   fullGuidanceDuration: number;
+  inputMode: InputMode;
 };
 
 type SettingsPanelProps = {
@@ -29,6 +32,49 @@ export function SettingsPanel({ settings, onSettingsChange, isConnected }: Setti
       <h2 className="text-xl font-bold text-gray-900">Settings</h2>
 
       <div className="space-y-4">
+        {/* Input Mode Selector */}
+        <div className="pb-4 border-b border-gray-200">
+          <label className="block text-sm font-medium text-gray-700 mb-3">
+            Input Mode
+          </label>
+          <div className="space-y-2">
+            <label className="flex items-center">
+              <input
+                type="radio"
+                name="inputMode"
+                value="audio"
+                checked={settings.inputMode === 'audio'}
+                onChange={() => updateSetting('inputMode', 'audio')}
+                disabled={isConnected}
+                className="mr-2"
+              />
+              <div>
+                <span className="font-medium">Audio Input</span>
+                <p className="text-xs text-gray-500">
+                  Model uses audio with transcripts (preserves tone, emotion)
+                </p>
+              </div>
+            </label>
+            <label className="flex items-center">
+              <input
+                type="radio"
+                name="inputMode"
+                value="text"
+                checked={settings.inputMode === 'text'}
+                onChange={() => updateSetting('inputMode', 'text')}
+                disabled={isConnected}
+                className="mr-2"
+              />
+              <div>
+                <span className="font-medium">Text Input</span>
+                <p className="text-xs text-gray-500">
+                  Model uses accumulated text transcripts only (single turn)
+                </p>
+              </div>
+            </label>
+          </div>
+        </div>
+
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Quick Hint Trigger Phrase

@@ -11,7 +11,7 @@ import { WavRecorder, WavStreamPlayer } from 'wavtools';
 import { getToken } from './server/token.action';
 import { Button } from '@/components/ui/Button';
 import { TranscriptDisplay, TranscriptItem } from '@/components/TranscriptDisplay';
-import { SettingsPanel, VoiceSettings } from '@/components/SettingsPanel';
+import { SettingsPanel, VoiceSettings, InputMode } from '@/components/SettingsPanel';
 
 const DEFAULT_SETTINGS: VoiceSettings = {
   quickHintPhrase: 'good question',
@@ -19,6 +19,7 @@ const DEFAULT_SETTINGS: VoiceSettings = {
   interruptPhrases: ['got it'],
   quickHintDuration: 10,
   fullGuidanceDuration: 20,
+  inputMode: 'audio', // Default to audio input mode
 };
 
 export default function Home() {
@@ -27,6 +28,10 @@ export default function Home() {
   const player = useRef<WavStreamPlayer | null>(null);
   const transcriptCache = useRef<Map<string, string>>(new Map()); // Cache transcripts by item_id
   const sessionHistory = useRef<RealtimeItem[]>([]); // Store full session history for LLM context logging
+
+  // For text input mode: accumulate transcripts and track audio items
+  const accumulatedTranscripts = useRef<string[]>([]); // Accumulate user transcripts before trigger
+  const audioItemIds = useRef<string[]>([]); // Track audio item IDs to delete when creating combined message
 
   // Agent states
   type AgentState = 'idle' | 'listening' | 'generating' | 'speaking';
@@ -68,7 +73,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
       config: {
         modalities: ['text'], // Text-only mode - agent cannot produce audio
         voice: 'alloy',
-        turn_detection: null, // Disable automatic turn detection
+        turn_detection: null,
         input_audio_transcription: {
           model: 'gpt-4o-mini-transcribe', // More accurate real-time transcription
           language: 'en', // Force English transcription
@@ -128,12 +133,14 @@ Always be concise, helpful, and base responses on what the user was discussing. 
             audio: {
               input: {
                 transcription: {
-                  model: 'gpt-4o-transcribe', // More accurate real-time transcription
+                  model: 'gpt-4o-mini-transcribe',
                   language: 'en', // Force English transcription
                 },
                 turn_detection: {
-                  type: 'server_vad',
+                  type: 'semantic_vad',
+                  eagerness: 'low',
                   create_response: false, // CRITICAL: Disable auto-response
+                  interrupt_response: false,
                 },
               },
               output: {
@@ -156,7 +163,21 @@ Always be concise, helpful, and base responses on what the user was discussing. 
       }
 
 
-      // Listen for transcription completion (without committing)
+      // Track audio items that are auto-created by server_vad (for text input mode)
+      if (event.type === 'conversation.item.created' && settings.inputMode === 'text') {
+        // @ts-ignore
+        const item = event.item;
+        if (item?.role === 'user' && item?.type === 'message') {
+          // Check if this is an audio input item
+          const hasAudioContent = item.content?.some((c: any) => c.type === 'input_audio');
+          if (hasAudioContent) {
+            console.log(`📌 [Text Mode] Tracking audio item ID for deletion: ${item.id}`);
+            audioItemIds.current.push(item.id);
+          }
+        }
+      }
+
+      // Listen for transcription completion
       if (event.type === 'conversation.item.input_audio_transcription.completed') {
         // @ts-ignore
         const transcript = event.transcript;
@@ -179,6 +200,12 @@ Always be concise, helpful, and base responses on what the user was discussing. 
           const quickHintDetected = textLower.includes(settings.quickHintPhrase.toLowerCase());
           const fullGuidanceDetected = textLower.includes(settings.fullGuidancePhrase.toLowerCase());
 
+          // In text mode, accumulate transcripts before triggering
+          if (settings.inputMode === 'text') {
+            console.log(`📝 [Text Mode] Accumulating transcript: "${transcript}"`);
+            accumulatedTranscripts.current.push(transcript);
+          }
+
           if (quickHintDetected || fullGuidanceDetected) {
             // Check if already generating a response
             if (agentState === 'generating' || agentState === 'speaking') {
@@ -186,15 +213,53 @@ Always be concise, helpful, and base responses on what the user was discussing. 
               return;
             }
 
-            console.log(`🎯 Trigger detected: "${transcript}"`);
-            setAgentState('generating');
-
             const responseType = quickHintDetected ? 'quick hint' : 'full guidance';
             const duration = quickHintDetected ? settings.quickHintDuration : settings.fullGuidanceDuration;
 
-            console.log(`📤 Switching to audio mode and creating ${responseType} response...`);
+            setAgentState('generating');
 
-            // First, switch session to audio mode
+            // Handle text input mode: combine transcripts into single message
+            if (settings.inputMode === 'text') {
+              const combinedUserMessage = accumulatedTranscripts.current.join(' ');
+              console.log(`🎯 [Text Mode] Trigger detected! Combined user message: "${combinedUserMessage}"`);
+              console.log(`📤 [Text Mode] Deleting ${audioItemIds.current.length} audio items and creating combined text message...`);
+
+              // Delete all the auto-created audio items
+              audioItemIds.current.forEach((itemId) => {
+                session.current?.transport?.sendEvent({
+                  type: 'conversation.item.delete',
+                  item_id: itemId,
+                });
+              });
+
+              // Clear the tracked IDs and transcripts
+              audioItemIds.current = [];
+              accumulatedTranscripts.current = [];
+
+              // Add the combined user message as TEXT to the conversation
+              session.current?.transport?.sendEvent({
+                type: 'conversation.item.create',
+                item: {
+                  type: 'message',
+                  role: 'user',
+                  content: [{
+                    type: 'input_text',
+                    text: combinedUserMessage,
+                  }],
+                },
+              });
+
+              // Clear the audio buffer (audio was only used for transcription)
+              session.current?.transport?.sendEvent({
+                type: 'input_audio_buffer.clear',
+              });
+            } else {
+              // Audio mode: just log, conversation already has audio items
+              console.log(`🎯 [Audio Mode] Trigger detected: "${transcript}"`);
+              console.log(`📤 [Audio Mode] Creating ${responseType} response with audio input...`);
+            }
+
+            // Switch session to audio mode for response
             session.current?.transport?.sendEvent({
               type: 'session.update',
               session: {
@@ -315,6 +380,10 @@ Always be concise, helpful, and base responses on what the user was discussing. 
 
       if (event.type === 'response.done') {
         console.log('✅ Response generation complete - switching back to text-only mode');
+
+        // Clear accumulated data for next turn (both modes)
+        accumulatedTranscripts.current = [];
+        audioItemIds.current = [];
 
         // Switch back to text-only mode (silent) for future responses
         session.current?.transport?.sendEvent({
