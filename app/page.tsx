@@ -152,13 +152,13 @@ Always be concise, helpful, and base responses on what the user was discussing. 
         console.log('  create_response:', sessionData?.audio?.input?.turn_detection?.create_response);
       }
 
-      // Server VAD detected speech starting
+      // Server VAD detected speech starting - interrupt immediately if agent is speaking
       if (event.type === 'input_audio_buffer.speech_started') {
         console.log('🎤 Speech started');
 
-        // Interrupt agent if it's currently speaking or generating (barge-in)
+        // IMMEDIATE barge-in: Stop agent as soon as user starts speaking
         if (agentState === 'speaking' || agentState === 'generating') {
-          console.log(`⚡ User started speaking during ${agentState} - interrupting agent (barge-in)`);
+          console.log(`⚡ BARGE-IN: User started speaking during ${agentState} - interrupting IMMEDIATELY`);
           interruptAgent();
         }
       }
