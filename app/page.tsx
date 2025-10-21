@@ -207,7 +207,15 @@ Always be concise, helpful, and base responses on what the user was discussing.`
     });
 
     // Listen for errors with comprehensive logging
-    session.current.on('error', (error) => {
+    session.current.on('error', (error: any) => {
+      // Suppress expected "empty buffer" errors - these happen when VAD
+      // fires before any audio has been sent (e.g., at session start)
+      const errorCode = error?.error?.error?.code;
+      if (errorCode === 'input_audio_buffer_commit_empty') {
+        console.log('ℹ️ Ignoring empty buffer commit error (no audio sent yet)');
+        return;
+      }
+
       console.group('🔴 Session Error Captured');
       console.error('Raw error object:', error);
       console.error('Error type:', typeof error);
