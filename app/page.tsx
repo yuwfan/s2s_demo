@@ -56,9 +56,9 @@ Always be concise, helpful, and base responses on what the user was discussing.`
     // Use WebSocket transport for manual audio control
     session.current = new RealtimeSession(agent, {
       transport: 'websocket',
-      model: 'gpt-4o-realtime-preview-2024-12-17',
+      model: 'gpt-realtime',
       config: {
-        voice: 'verse',
+        voice: 'alloy',
       },
     });
 
