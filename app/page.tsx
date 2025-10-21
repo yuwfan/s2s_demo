@@ -146,6 +146,12 @@ Always be concise, helpful, and base responses on what the user was discussing. 
       // Server VAD detected speech starting
       if (event.type === 'input_audio_buffer.speech_started') {
         console.log('🎤 Speech started');
+
+        // Interrupt agent if it's currently speaking (barge-in)
+        if (isSpeaking || isGeneratingResponse) {
+          console.log('⚡ User started speaking - interrupting agent (barge-in)');
+          interruptAgent();
+        }
       }
 
       // Server VAD detected end of speech
@@ -174,7 +180,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
             textLower.includes(phrase.toLowerCase())
           );
 
-          if (interruptDetected && isGeneratingResponse) {
+          if (interruptDetected && (isGeneratingResponse || isSpeaking)) {
             console.log(`⛔ Interrupt phrase detected: "${transcript}"`);
             interruptAgent();
             return;
