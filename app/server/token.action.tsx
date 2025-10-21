@@ -15,10 +15,8 @@ export async function getToken() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        session: {
-          type: 'realtime',
-          model: 'gpt-realtime',
-        },
+        model: 'gpt-4o-realtime-preview-2024-12-17',
+        voice: 'verse',
       }),
     },
   );

@@ -56,9 +56,9 @@ Always be concise, helpful, and base responses on what the user was discussing.`
     // Use WebSocket transport for manual audio control
     session.current = new RealtimeSession(agent, {
       transport: 'websocket',
-      model: 'gpt-realtime',
+      model: 'gpt-4o-realtime-preview-2024-12-17',
       config: {
-        voice: 'alloy',
+        voice: 'verse',
       },
     });
 
@@ -70,11 +70,17 @@ Always be concise, helpful, and base responses on what the user was discussing.`
     session.current.on('transport_event', (event) => {
       setEvents((prev) => [...prev, event]);
 
+      // Log important events for debugging
+      if (event.type === 'session.created' || event.type === 'session.updated' || event.type?.includes('error')) {
+        console.log('Transport event:', event.type, event);
+      }
+
       // No session.update needed - defaults work for WebSocket mode
       // Server VAD is handled by default turn detection
 
       // Server VAD detected end of speech - commit the audio to build context
       if (event.type === 'input_audio_buffer.speech_stopped') {
+        console.log('Speech stopped, committing audio...');
         session.current?.transport?.sendEvent({
           type: 'input_audio_buffer.commit',
         });
@@ -172,9 +178,21 @@ Always be concise, helpful, and base responses on what the user was discussing.`
     // Listen for errors
     session.current.on('error', (error) => {
       console.error('Session error:', error);
+      if (error instanceof Error) {
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+        console.error('Error name:', error.name);
+      }
       console.error('Error details:', JSON.stringify(error, null, 2));
       console.error('Error type:', typeof error);
-      console.error('Error keys:', Object.keys(error));
+      console.error('Error keys:', error ? Object.keys(error) : 'null/undefined');
+      console.error('Error toString:', error?.toString());
+      // Try to extract any nested properties
+      if (error && typeof error === 'object') {
+        for (const key in error) {
+          console.error(`Error.${key}:`, (error as any)[key]);
+        }
+      }
     });
 
     return () => {
