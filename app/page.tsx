@@ -27,8 +27,6 @@ export default function Home() {
   const player = useRef<WavStreamPlayer | null>(null);
   const transcriptCache = useRef<Map<string, string>>(new Map()); // Cache transcripts by item_id
   const sessionHistory = useRef<RealtimeItem[]>([]); // Store full session history for LLM context logging
-  const accumulatedTranscripts = useRef<string[]>([]); // Accumulate user transcripts before trigger
-  const audioItemIds = useRef<string[]>([]); // Track audio item IDs to delete when creating combined message
 
   // Agent states
   type AgentState = 'idle' | 'listening' | 'generating' | 'speaking';
@@ -135,7 +133,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
                 },
                 turn_detection: {
                   type: 'server_vad',
-                  create_response: false, // Don't auto-create responses
+                  create_response: false, // CRITICAL: Disable auto-response
                 },
               },
               output: {
@@ -157,28 +155,8 @@ Always be concise, helpful, and base responses on what the user was discussing. 
         }
       }
 
-      // Server VAD detected end of speech
-      // Note: With server_vad, the audio will be auto-committed to create a conversation item
-      // We'll delete these audio items and replace them with a combined text message when triggered
-      if (event.type === 'input_audio_buffer.speech_stopped') {
-        console.log('🎤 Speech stopped - audio will be auto-committed');
-      }
 
-      // Track audio items that are auto-created by server_vad
-      if (event.type === 'conversation.item.created') {
-        // @ts-ignore
-        const item = event.item;
-        if (item?.role === 'user' && item?.type === 'message') {
-          // Check if this is an audio input item
-          const hasAudioContent = item.content?.some((c: any) => c.type === 'input_audio');
-          if (hasAudioContent) {
-            console.log(`📌 Tracking audio item ID: ${item.id}`);
-            audioItemIds.current.push(item.id);
-          }
-        }
-      }
-
-      // Listen for transcription completion
+      // Listen for transcription completion (without committing)
       if (event.type === 'conversation.item.input_audio_transcription.completed') {
         // @ts-ignore
         const transcript = event.transcript;
@@ -197,10 +175,6 @@ Always be concise, helpful, and base responses on what the user was discussing. 
             return;
           }
 
-          // Accumulate transcript (don't commit to conversation yet)
-          console.log(`📝 Accumulating transcript: "${transcript}"`);
-          accumulatedTranscripts.current.push(transcript);
-
           // Check for trigger phrases
           const quickHintDetected = textLower.includes(settings.quickHintPhrase.toLowerCase());
           const fullGuidanceDetected = textLower.includes(settings.fullGuidancePhrase.toLowerCase());
@@ -212,50 +186,15 @@ Always be concise, helpful, and base responses on what the user was discussing. 
               return;
             }
 
-            // Combine all accumulated transcripts into one user message
-            const combinedUserMessage = accumulatedTranscripts.current.join(' ');
-            console.log(`🎯 Trigger detected! Combined user message: "${combinedUserMessage}"`);
-
-            // Clear accumulated transcripts
-            accumulatedTranscripts.current = [];
-
+            console.log(`🎯 Trigger detected: "${transcript}"`);
             setAgentState('generating');
 
             const responseType = quickHintDetected ? 'quick hint' : 'full guidance';
             const duration = quickHintDetected ? settings.quickHintDuration : settings.fullGuidanceDuration;
 
-            console.log(`📤 Deleting ${audioItemIds.current.length} audio items and creating combined user message...`);
+            console.log(`📤 Switching to audio mode and creating ${responseType} response...`);
 
-            // Delete all the auto-created audio items
-            audioItemIds.current.forEach((itemId) => {
-              session.current?.transport?.sendEvent({
-                type: 'conversation.item.delete',
-                item_id: itemId,
-              });
-            });
-
-            // Clear the tracked IDs
-            audioItemIds.current = [];
-
-            // Add the combined user message to the conversation
-            session.current?.transport?.sendEvent({
-              type: 'conversation.item.create',
-              item: {
-                type: 'message',
-                role: 'user',
-                content: [{
-                  type: 'input_text',
-                  text: combinedUserMessage,
-                }],
-              },
-            });
-
-            // Clear the audio buffer (audio was only used for transcription)
-            session.current?.transport?.sendEvent({
-              type: 'input_audio_buffer.clear',
-            });
-
-            // Switch session to audio mode
+            // First, switch session to audio mode
             session.current?.transport?.sendEvent({
               type: 'session.update',
               session: {
@@ -376,10 +315,6 @@ Always be concise, helpful, and base responses on what the user was discussing. 
 
       if (event.type === 'response.done') {
         console.log('✅ Response generation complete - switching back to text-only mode');
-
-        // Clear accumulated transcripts and audio IDs for next turn
-        accumulatedTranscripts.current = [];
-        audioItemIds.current = [];
 
         // Switch back to text-only mode (silent) for future responses
         session.current?.transport?.sendEvent({
