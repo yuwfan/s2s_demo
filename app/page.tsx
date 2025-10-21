@@ -31,32 +31,17 @@ export default function Home() {
   const [currentTranscript, setCurrentTranscript] = useState('');
   const [conversationHistory, setConversationHistory] = useState<string[]>([]);
 
-  // Create agent with dynamic instructions
+  // Create agent with simplified instructions for triggered responses
   const createAgent = (settings: VoiceSettings) => {
-    const instructions = `You are a silent listening assistant. Your ONLY job is to listen and wait.
+    const instructions = `You are a helpful voice assistant. When asked to provide a hint or guidance, base your response on the recent conversation context.
 
-ABSOLUTE RULES - DO NOT BREAK THESE:
-1. DO NOT respond to questions, statements, or anything the user says
-2. DO NOT engage in conversation
-3. DO NOT answer "hello", "how are you", or any greetings
-4. DO NOT provide help unless you hear the EXACT trigger phrases below
-5. STAY COMPLETELY SILENT unless triggered
+For quick hints (${settings.quickHintDuration} seconds): Provide brief, actionable advice in 1-2 sentences.
+For full guidance (${settings.fullGuidanceDuration} seconds): Provide comprehensive step-by-step explanations with context and examples.
 
-YOU MUST ONLY RESPOND when you hear these EXACT trigger phrases:
-- "${settings.quickHintPhrase}" → Give a brief ${settings.quickHintDuration}-second hint about what you just heard
-- "${settings.fullGuidancePhrase}" → Give a detailed ${settings.fullGuidanceDuration}-second explanation about the conversation
-
-HOW TO RESPOND WHEN TRIGGERED:
-- If you hear "${settings.quickHintPhrase}": Provide 1-2 sentences of helpful advice based on the last thing the user said before the trigger
-- If you hear "${settings.fullGuidancePhrase}": Provide a comprehensive explanation with steps and examples based on the entire conversation
-
-INTERRUPT PHRASES (stop speaking immediately):
-- ${settings.interruptPhrases.join(', ')}
-
-REMEMBER: You are a SILENT LISTENER. Do not speak unless you hear the exact trigger phrases above.`;
+Always be concise, helpful, and base responses on what the user was discussing.`;
 
     return new RealtimeAgent({
-      name: 'Silent Listening Assistant',
+      name: 'Voice Assistant',
       instructions,
       tools: [],
     });
@@ -68,12 +53,14 @@ REMEMBER: You are a SILENT LISTENER. Do not speak unless you hear the exact trig
     session.current = new RealtimeSession(agent, {
       model: 'gpt-realtime',
       config: {
-        audio: {
-          output: {
-            voice: 'alloy',
-          },
+        modalities: ['text'], // Start in text-only mode (listening without speaking)
+        voice: 'alloy', // Voice to use when we switch to audio mode
+        turn_detection: {
+          type: 'server_vad', // Enable VAD so it keeps listening
+          threshold: 0.5,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 500,
         },
-        turn_detection: null, // Disable automatic turn detection - agent only responds to triggers
       },
     });
 
@@ -87,6 +74,14 @@ REMEMBER: You are a SILENT LISTENER. Do not speak unless you hear the exact trig
       }
       if (event.type === 'response.done') {
         setIsSpeaking(false);
+
+        // Switch back to text-only mode after response completes
+        session.current?.transport?.sendEvent({
+          type: 'session.update',
+          session: {
+            modalities: ['text'],
+          },
+        });
       }
     });
 
@@ -127,18 +122,39 @@ REMEMBER: You are a SILENT LISTENER. Do not speak unless you hear the exact trig
         }
       });
 
-      // Detect trigger phrases and manually trigger response
+      // Detect trigger phrases and switch to audio mode for response
       if (latestUserText) {
         const textLower = latestUserText.toLowerCase();
         const quickHintDetected = textLower.includes(settings.quickHintPhrase.toLowerCase());
         const fullGuidanceDetected = textLower.includes(settings.fullGuidancePhrase.toLowerCase());
 
         if (quickHintDetected || fullGuidanceDetected) {
-          // Trigger a response by sending a special message
+          // Determine the type of response needed
+          const responseType = quickHintDetected ? 'quick hint' : 'full guidance';
+          const context = conversationHistory.slice(quickHintDetected ? -3 : -10).join(' ');
+
+          // Switch to audio mode and create a response
           setTimeout(() => {
+            // First, switch session to include audio in modalities
             session.current?.transport?.sendEvent({
-              type: 'response.create',
+              type: 'session.update',
+              session: {
+                modalities: ['text', 'audio'],
+              },
             });
+
+            // Then create a response with the context
+            setTimeout(() => {
+              session.current?.transport?.sendEvent({
+                type: 'response.create',
+                response: {
+                  modalities: ['text', 'audio'],
+                  instructions: `The user said "${settings.quickHintPhrase}" or "${settings.fullGuidancePhrase}".
+                  Provide a ${responseType} based on this recent conversation: "${context}".
+                  Keep it to about ${quickHintDetected ? settings.quickHintDuration : settings.fullGuidanceDuration} seconds.`,
+                },
+              });
+            }, 100);
           }, 100);
         }
       }
@@ -186,24 +202,55 @@ REMEMBER: You are a SILENT LISTENER. Do not speak unless you hear the exact trig
     }
   }
 
-  // Trigger response via button (simulates detecting trigger phrase)
+  // Trigger response via button - switch to audio mode and create response
   async function triggerQuickHint() {
     if (!session.current || !isConnected) return;
 
-    // Send a message to trigger the agent
     const context = conversationHistory.slice(-3).join(' '); // Last 3 messages
-    await session.current.sendText(
-      `[TRIGGER: Quick Hint] Based on: "${context}"`
-    );
+
+    // Switch to audio mode
+    session.current.transport?.sendEvent({
+      type: 'session.update',
+      session: {
+        modalities: ['text', 'audio'],
+      },
+    });
+
+    // Create response with audio
+    setTimeout(() => {
+      session.current?.transport?.sendEvent({
+        type: 'response.create',
+        response: {
+          modalities: ['text', 'audio'],
+          instructions: `Provide a quick hint (${settings.quickHintDuration} seconds) based on this conversation: "${context}". Be brief and actionable.`,
+        },
+      });
+    }, 100);
   }
 
   async function triggerFullGuidance() {
     if (!session.current || !isConnected) return;
 
     const context = conversationHistory.join(' '); // Full history
-    await session.current.sendText(
-      `[TRIGGER: Full Guidance] Based on: "${context}"`
-    );
+
+    // Switch to audio mode
+    session.current.transport?.sendEvent({
+      type: 'session.update',
+      session: {
+        modalities: ['text', 'audio'],
+      },
+    });
+
+    // Create response with audio
+    setTimeout(() => {
+      session.current?.transport?.sendEvent({
+        type: 'response.create',
+        response: {
+          modalities: ['text', 'audio'],
+          instructions: `Provide full guidance (${settings.fullGuidanceDuration} seconds) based on this conversation: "${context}". Be comprehensive with steps and examples.`,
+        },
+      });
+    }, 100);
   }
 
   async function interruptAgent() {
@@ -212,6 +259,14 @@ REMEMBER: You are a SILENT LISTENER. Do not speak unless you hear the exact trig
     // Cancel the current response
     await session.current.cancelResponse();
     setIsSpeaking(false);
+
+    // Switch back to text-only mode
+    session.current.transport?.sendEvent({
+      type: 'session.update',
+      session: {
+        modalities: ['text'],
+      },
+    });
   }
 
   return (
