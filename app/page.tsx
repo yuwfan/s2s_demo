@@ -57,22 +57,36 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       },
     });
 
-    // Configure session for text-only mode with server VAD after connection
+    // Configure session for silent listening mode after connection
     session.current.on('transport_event', (event) => {
       if (event.type === 'session.created') {
-        // Set up text-only mode with server VAD
+        // Set up for silent context collection:
+        // - No turn_detection (we'll manually commit audio)
+        // - Audio input enabled to collect context
+        // - No modalities set = no automatic responses
         session.current?.transport?.sendEvent({
           type: 'session.update',
           session: {
-            modalities: ['text'],
-            turn_detection: {
-              type: 'server_vad',
-              threshold: 0.5,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 500,
+            turn_detection: null, // Disable auto-response
+            input_audio_transcription: {
+              model: 'whisper-1',
             },
           },
         });
+      }
+
+      // Manually commit audio when user stops speaking (using conversation.item.input_audio_transcription.completed)
+      if (event.type === 'input_audio_buffer.speech_stopped') {
+        // Commit the audio buffer to add it to conversation context
+        session.current?.transport?.sendEvent({
+          type: 'input_audio_buffer.commit',
+        });
+      }
+
+      // Track conversation items being created
+      if (event.type === 'conversation.item.created') {
+        // Audio has been committed and added to context
+        // Don't create response - just collecting context
       }
     });
 
@@ -86,14 +100,8 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       }
       if (event.type === 'response.done') {
         setIsSpeaking(false);
-
-        // Switch back to text-only mode after response completes
-        session.current?.transport?.sendEvent({
-          type: 'session.update',
-          session: {
-            modalities: ['text'],
-          },
-        });
+        // Response complete - back to silent listening mode
+        // No need to switch modalities, just don't create another response
       }
     });
 
@@ -134,39 +142,30 @@ Always be concise, helpful, and base responses on what the user was discussing.`
         }
       });
 
-      // Detect trigger phrases and switch to audio mode for response
+      // Detect trigger phrases and create single audio response
       if (latestUserText) {
         const textLower = latestUserText.toLowerCase();
         const quickHintDetected = textLower.includes(settings.quickHintPhrase.toLowerCase());
         const fullGuidanceDetected = textLower.includes(settings.fullGuidancePhrase.toLowerCase());
 
         if (quickHintDetected || fullGuidanceDetected) {
-          // Determine the type of response needed
+          // Create a SINGLE audio response based on accumulated context
+          // The session already has all committed audio as context
           const responseType = quickHintDetected ? 'quick hint' : 'full guidance';
-          const context = conversationHistory.slice(quickHintDetected ? -3 : -10).join(' ');
+          const duration = quickHintDetected ? settings.quickHintDuration : settings.fullGuidanceDuration;
 
-          // Switch to audio mode and create a response
           setTimeout(() => {
-            // First, switch session to include audio in modalities
             session.current?.transport?.sendEvent({
-              type: 'session.update',
-              session: {
-                modalities: ['text', 'audio'],
+              type: 'response.create',
+              response: {
+                modalities: ['text', 'audio'], // Request audio output for this response
+                instructions: `Provide a ${responseType} (around ${duration} seconds) based on the conversation context. ${
+                  quickHintDetected
+                    ? 'Be brief and actionable, 1-2 sentences.'
+                    : 'Be comprehensive with steps and examples.'
+                }`,
               },
             });
-
-            // Then create a response with the context
-            setTimeout(() => {
-              session.current?.transport?.sendEvent({
-                type: 'response.create',
-                response: {
-                  modalities: ['text', 'audio'],
-                  instructions: `The user said "${settings.quickHintPhrase}" or "${settings.fullGuidancePhrase}".
-                  Provide a ${responseType} based on this recent conversation: "${context}".
-                  Keep it to about ${quickHintDetected ? settings.quickHintDuration : settings.fullGuidanceDuration} seconds.`,
-                },
-              });
-            }, 100);
           }, 100);
         }
       }
@@ -214,73 +213,44 @@ Always be concise, helpful, and base responses on what the user was discussing.`
     }
   }
 
-  // Trigger response via button - switch to audio mode and create response
+  // Trigger response via button - create single audio response from accumulated context
   async function triggerQuickHint() {
     if (!session.current || !isConnected) return;
 
-    const context = conversationHistory.slice(-3).join(' '); // Last 3 messages
-
-    // Switch to audio mode
+    // Create a single audio response
+    // Session already has all committed audio as context
     session.current.transport?.sendEvent({
-      type: 'session.update',
-      session: {
-        modalities: ['text', 'audio'],
+      type: 'response.create',
+      response: {
+        modalities: ['text', 'audio'], // Request audio output
+        instructions: `Provide a quick hint (around ${settings.quickHintDuration} seconds) based on the recent conversation context. Be brief and actionable, 1-2 sentences.`,
       },
     });
-
-    // Create response with audio
-    setTimeout(() => {
-      session.current?.transport?.sendEvent({
-        type: 'response.create',
-        response: {
-          modalities: ['text', 'audio'],
-          instructions: `Provide a quick hint (${settings.quickHintDuration} seconds) based on this conversation: "${context}". Be brief and actionable.`,
-        },
-      });
-    }, 100);
   }
 
   async function triggerFullGuidance() {
     if (!session.current || !isConnected) return;
 
-    const context = conversationHistory.join(' '); // Full history
-
-    // Switch to audio mode
+    // Create a single audio response
+    // Session already has all committed audio as context
     session.current.transport?.sendEvent({
-      type: 'session.update',
-      session: {
-        modalities: ['text', 'audio'],
+      type: 'response.create',
+      response: {
+        modalities: ['text', 'audio'], // Request audio output
+        instructions: `Provide full guidance (around ${settings.fullGuidanceDuration} seconds) based on the entire conversation context. Be comprehensive with steps and examples.`,
       },
     });
-
-    // Create response with audio
-    setTimeout(() => {
-      session.current?.transport?.sendEvent({
-        type: 'response.create',
-        response: {
-          modalities: ['text', 'audio'],
-          instructions: `Provide full guidance (${settings.fullGuidanceDuration} seconds) based on this conversation: "${context}". Be comprehensive with steps and examples.`,
-        },
-      });
-    }, 100);
   }
 
   async function interruptAgent() {
     if (!session.current || !isConnected || !isSpeaking) return;
 
-    // Cancel the current response
+    // Cancel the current response and return to silent listening
     session.current.transport?.sendEvent({
       type: 'response.cancel',
     });
     setIsSpeaking(false);
-
-    // Switch back to text-only mode
-    session.current.transport?.sendEvent({
-      type: 'session.update',
-      session: {
-        modalities: ['text'],
-      },
-    });
+    // Back to silent mode - just don't create another response
   }
 
   return (
