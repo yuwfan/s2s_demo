@@ -16,7 +16,7 @@ import { SettingsPanel, VoiceSettings } from '@/components/SettingsPanel';
 const DEFAULT_SETTINGS: VoiceSettings = {
   quickHintPhrase: 'good question',
   fullGuidancePhrase: 'let me think',
-  interruptPhrases: ['got it', 'thanks', 'stop'],
+  interruptPhrases: ['got it'],
   quickHintDuration: 10,
   fullGuidanceDuration: 20,
 };
@@ -68,7 +68,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
         voice: 'alloy',
         turn_detection: null, // Disable automatic turn detection
         input_audio_transcription: {
-          model: 'gpt-4o-transcribe', // More accurate real-time transcription
+          model: 'gpt-4o-mini-transcribe', // More accurate real-time transcription
           language: 'en', // Force English transcription
         },
       },
@@ -82,7 +82,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
     session.current.on('transport_event', (event) => {
       setEvents((prev) => [...prev, event]);
 
-      // Check for and suppress expected empty buffer errors first
+      // Check for and suppress expected errors first
       if (event.type === 'error') {
         // @ts-ignore - error event structure
         const errorCode = event.error?.code;
@@ -91,6 +91,13 @@ Always be concise, helpful, and base responses on what the user was discussing. 
         // fires before any audio has been sent (e.g., at session start)
         if (errorCode === 'input_audio_buffer_commit_empty') {
           // Silently ignore - this is expected behavior at session start
+          return;
+        }
+
+        // Suppress "response_cancel_not_active" - happens when we try to cancel
+        // after response finished but audio is still playing
+        if (errorCode === 'response_cancel_not_active') {
+          console.log('ℹ️ Response already completed (audio was still playing)');
           return;
         }
 
@@ -368,11 +375,20 @@ Always be concise, helpful, and base responses on what the user was discussing. 
 
     // Listen for errors with comprehensive logging
     session.current.on('error', (error: any) => {
+      // Suppress expected errors
+      const errorCode = error?.error?.error?.code;
+
       // Suppress expected "empty buffer" errors - these happen when VAD
       // fires before any audio has been sent (e.g., at session start)
-      const errorCode = error?.error?.error?.code;
       if (errorCode === 'input_audio_buffer_commit_empty') {
         // Silently ignore - this is expected behavior at session start
+        return;
+      }
+
+      // Suppress "response_cancel_not_active" - happens when we interrupt
+      // after response finished but audio is still playing
+      if (errorCode === 'response_cancel_not_active') {
+        console.log('ℹ️ Response already completed (audio was still playing)');
         return;
       }
 
@@ -553,15 +569,28 @@ Always be concise, helpful, and base responses on what the user was discussing. 
 
     console.log(`⛔ Interrupting agent (was ${agentState})...`);
 
-    // IMMEDIATELY stop audio playback
-    await player.current?.interrupt();
+    // IMMEDIATELY set state to listening FIRST
+    setAgentState('listening');
+
+    try {
+      // Stop audio playback
+      if (player.current) {
+        console.log('🔇 Calling player.interrupt()...');
+        await player.current.interrupt();
+        console.log('✅ player.interrupt() completed');
+      }
+    } catch (error) {
+      console.error('❌ Error calling player.interrupt():', error);
+    }
 
     // Cancel the current response
+    console.log('📤 Sending response.cancel...');
     session.current.transport?.sendEvent({
       type: 'response.cancel',
     });
 
     // Switch back to text-only mode
+    console.log('📤 Switching to text-only mode...');
     session.current.transport?.sendEvent({
       type: 'session.update',
       session: {
@@ -570,8 +599,6 @@ Always be concise, helpful, and base responses on what the user was discussing. 
       },
     });
 
-    // IMMEDIATELY set state to listening
-    setAgentState('listening');
     console.log('✅ Agent interrupted - back to listening');
   }
 
