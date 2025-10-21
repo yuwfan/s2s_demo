@@ -111,7 +111,9 @@ Always be concise, helpful, and base responses on what the user was discussing.`
             output_modalities: ['text'], // Text-only mode - prevents audio responses
             audio: {
               input: {
-                transcription: null, // Disable transcription (we'll use conversation items)
+                transcription: {
+                  model: 'whisper-1', // Enable transcription for trigger detection
+                },
                 turn_detection: {
                   type: 'server_vad',
                   create_response: false, // CRITICAL: Disable auto-response
@@ -131,7 +133,8 @@ Always be concise, helpful, and base responses on what the user was discussing.`
         const sessionData = event.session;
         console.log('  output_modalities:', sessionData?.output_modalities);
         console.log('  audio.input.transcription:', sessionData?.audio?.input?.transcription);
-        console.log('  Full session:', sessionData);
+        console.log('  audio.input.turn_detection:', sessionData?.audio?.input?.turn_detection);
+        console.log('  create_response:', sessionData?.audio?.input?.turn_detection?.create_response);
       }
 
       // Server VAD detected speech starting
