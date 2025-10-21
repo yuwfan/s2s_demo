@@ -15,6 +15,8 @@
 
 The correct approach is **continuous context collection + triggered response**.
 
+**Critical API Constraint**: The Realtime API only accepts `output_modalities: ['text']` OR `['audio']`, NOT `['text', 'audio']` together. You must switch between modes.
+
 ### Key Insight
 
 **Feed audio into the session continuously to build context, but only create a response when explicitly triggered.**
@@ -94,17 +96,28 @@ session.current.on('history_updated', (history) => {
 
 ```typescript
 function createTriggeredResponse() {
-  // Create a single response using accumulated context
+  // First, switch session to audio-only mode
   session.current.transport.sendEvent({
-    type: 'response.create',
-    response: {
-      modalities: ['text', 'audio'], // ← Request audio output
-      instructions: 'Provide guidance based on conversation context',
+    type: 'session.update',
+    session: {
+      type: 'realtime',
+      output_modalities: ['audio'], // ← Audio-only mode
     },
   });
-  // Session already has all committed audio as context!
+
+  // Then create response (will use accumulated context)
+  setTimeout(() => {
+    session.current.transport.sendEvent({
+      type: 'response.create',
+      response: {
+        instructions: 'Provide guidance based on conversation context',
+      },
+    });
+  }, 100);
 }
 ```
+
+**Important**: The API only supports `['text']` OR `['audio']` as modalities, not `['text', 'audio']` together.
 
 ### 5. Return to Silence
 
@@ -208,19 +221,21 @@ Same approach works for button-triggered responses:
 ```typescript
 async function triggerQuickHint() {
   const context = conversationHistory.slice(-3).join(' ');
-  
-  // Switch to audio
+
+  // Switch to audio-only mode
   session.current.transport.sendEvent({
     type: 'session.update',
-    session: { modalities: ['text', 'audio'] },
+    session: {
+      type: 'realtime',
+      output_modalities: ['audio'],
+    },
   });
-  
-  // Create response
+
+  // Create response (no modalities parameter)
   setTimeout(() => {
     session.current.transport.sendEvent({
       type: 'response.create',
       response: {
-        modalities: ['text', 'audio'],
         instructions: `Quick hint based on: "${context}"`,
       },
     });
@@ -234,13 +249,21 @@ When user interrupts:
 
 ```typescript
 async function interruptAgent() {
+  // Stop audio playback
+  await player.current?.interrupt();
+
   // Cancel current response
-  await session.current.cancelResponse();
-  
-  // Switch back to text-only
+  session.current.transport.sendEvent({
+    type: 'response.cancel',
+  });
+
+  // Switch back to text-only mode
   session.current.transport.sendEvent({
     type: 'session.update',
-    session: { modalities: ['text'] },
+    session: {
+      type: 'realtime',
+      output_modalities: ['text'],
+    },
   });
 }
 ```
@@ -277,10 +300,10 @@ Check for `response.create` events when triggers fire.
 
 ### Monitor State Transitions
 Watch for the pattern:
-1. `session.update` → modalities: ['text', 'audio']
-2. `response.create` → modalities: ['text', 'audio']  
+1. `session.update` → output_modalities: ['audio']
+2. `response.create` (no modalities parameter)
 3. `response.done`
-4. `session.update` → modalities: ['text']
+4. `session.update` → output_modalities: ['text']
 
 ## Common Issues
 
@@ -295,9 +318,11 @@ Watch for the pattern:
 - Ensure `response.create` follows after delay
 
 ### Audio not playing
-- Verify modalities include 'audio'
-- Check voice is configured
-- Ensure WebRTC connection is active
+- Verify output_modalities is set to ['audio'] not ['text', 'audio']
+- Check voice is configured in audio.output.voice
+- Ensure audio player is connected
+- Check that audio delta events are being received
+- Verify no code is interrupting playback on transcription events
 
 ## Testing Checklist
 

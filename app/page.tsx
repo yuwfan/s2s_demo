@@ -36,12 +36,14 @@ export default function Home() {
 
   // Create agent with simplified instructions for triggered responses
   const createAgent = (settings: VoiceSettings) => {
-    const instructions = `You are a helpful voice assistant. When asked to provide a hint or guidance, base your response on the recent conversation context.
+    const instructions = `You are a helpful voice assistant. ALWAYS respond in English, regardless of the language used in the conversation.
+
+When asked to provide a hint or guidance, base your response on the recent conversation context.
 
 For quick hints (${settings.quickHintDuration} seconds): Provide brief, actionable advice in 1-2 sentences.
 For full guidance (${settings.fullGuidanceDuration} seconds): Provide comprehensive step-by-step explanations with context and examples.
 
-Always be concise, helpful, and base responses on what the user was discussing.`;
+Always be concise, helpful, and base responses on what the user was discussing. Remember: ALWAYS use English for all responses.`;
 
     return new RealtimeAgent({
       name: 'Voice Assistant',
@@ -113,6 +115,7 @@ Always be concise, helpful, and base responses on what the user was discussing.`
               input: {
                 transcription: {
                   model: 'whisper-1', // Enable transcription for trigger detection
+                  language: 'en', // Force English transcription
                 },
                 turn_detection: {
                   type: 'server_vad',
@@ -178,7 +181,7 @@ Always be concise, helpful, and base responses on what the user was discussing.`
               type: 'session.update',
               session: {
                 type: 'realtime',
-                output_modalities: ['text', 'audio'], // Enable audio output
+                output_modalities: ['audio'], // Audio-only mode for voice response
               },
             });
 
@@ -187,7 +190,7 @@ Always be concise, helpful, and base responses on what the user was discussing.`
               session.current?.transport?.sendEvent({
                 type: 'response.create',
                 response: {
-                  instructions: `Provide a ${responseType} (around ${duration} seconds) based on the conversation context. ${
+                  instructions: `RESPOND IN ENGLISH ONLY. Provide a ${responseType} (around ${duration} seconds) based on the conversation context. ${
                     quickHintDetected
                       ? 'Be brief and actionable, 1-2 sentences.'
                       : 'Be comprehensive with steps and examples.'
@@ -209,14 +212,26 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       }
 
       // Handle audio output from agent responses
-      if (event.type === 'response.audio.delta') {
+      if (event.type === 'response.output_audio.delta') {
+        console.log('🔊 Audio delta received, size:', event.delta?.length);
         setIsSpeaking(true);
         // @ts-ignore - audio delta structure
         const audioData = event.delta;
         if (audioData && player.current) {
-          // @ts-ignore
-          player.current.add16BitPCM(audioData, event.item_id);
+          // Decode base64 audio data
+          const binaryString = atob(audioData);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          const int16Array = new Int16Array(bytes.buffer);
+          player.current.add16BitPCM(int16Array, event.item_id);
         }
+      }
+
+      // Log all response-related events for debugging
+      if (event.type.startsWith('response.')) {
+        console.log('📡 Response event:', event.type, event);
       }
 
       if (event.type === 'response.done') {
@@ -233,10 +248,8 @@ Always be concise, helpful, and base responses on what the user was discussing.`
         });
       }
 
-      // Handle audio interruption
-      if (event.type === 'response.audio_transcript.done' || event.type === 'conversation.item.input_audio_transcription.completed') {
-        player.current?.interrupt();
-      }
+      // Audio interruption is handled separately via the interruptAgent() function
+      // Don't auto-interrupt on transcription events
     });
 
     // Listen to conversation history updates
@@ -413,7 +426,7 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       type: 'session.update',
       session: {
         type: 'realtime',
-        output_modalities: ['text', 'audio'],
+        output_modalities: ['audio'], // Audio-only mode for voice response
       },
     });
 
@@ -422,7 +435,7 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       session.current?.transport?.sendEvent({
         type: 'response.create',
         response: {
-          instructions: `Provide a quick hint (around ${settings.quickHintDuration} seconds) based on the recent conversation context. Be brief and actionable, 1-2 sentences.`,
+          instructions: `RESPOND IN ENGLISH ONLY. Provide a quick hint (around ${settings.quickHintDuration} seconds) based on the recent conversation context. Be brief and actionable, 1-2 sentences.`,
         },
       });
     }, 100);
@@ -438,7 +451,7 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       type: 'session.update',
       session: {
         type: 'realtime',
-        output_modalities: ['text', 'audio'],
+        output_modalities: ['audio'], // Audio-only mode for voice response
       },
     });
 
@@ -447,7 +460,7 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       session.current?.transport?.sendEvent({
         type: 'response.create',
         response: {
-          instructions: `Provide full guidance (around ${settings.fullGuidanceDuration} seconds) based on the entire conversation context. Be comprehensive with steps and examples.`,
+          instructions: `RESPOND IN ENGLISH ONLY. Provide full guidance (around ${settings.fullGuidanceDuration} seconds) based on the entire conversation context. Be comprehensive with steps and examples.`,
         },
       });
     }, 100);
@@ -456,12 +469,26 @@ Always be concise, helpful, and base responses on what the user was discussing.`
   async function interruptAgent() {
     if (!session.current || !isConnected || !isSpeaking) return;
 
-    // Cancel the current response and return to silent listening
+    console.log('⛔ Interrupting agent response...');
+
+    // Stop audio playback
+    await player.current?.interrupt();
+
+    // Cancel the current response
     session.current.transport?.sendEvent({
       type: 'response.cancel',
     });
+
+    // Switch back to text-only mode
+    session.current.transport?.sendEvent({
+      type: 'session.update',
+      session: {
+        type: 'realtime',
+        output_modalities: ['text'],
+      },
+    });
+
     setIsSpeaking(false);
-    // Back to silent mode - just don't create another response
   }
 
   return (
