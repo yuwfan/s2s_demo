@@ -59,6 +59,7 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       model: 'gpt-realtime',
       config: {
         voice: 'alloy',
+        turn_detection: null, // Disable automatic turn detection
       },
     });
 
@@ -93,19 +94,9 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       // Log important events for debugging (after filtering out suppressed errors)
       if (event.type === 'session.created' || event.type === 'session.updated') {
         console.log('📡 Transport event:', event.type, event);
-      }
-
-      // Disable automatic turn detection to prevent auto-responses
-      // This is critical - without this, the agent responds after every utterance
-      if (event.type === 'session.created') {
-        console.log('🔧 Disabling automatic turn detection...');
-        session.current?.transport?.sendEvent({
-          type: 'session.update',
-          session: {
-            type: 'realtime', // Required field
-            turn_detection: null, // Disable auto-response
-          },
-        });
+        // Log turn_detection setting to verify it's disabled
+        // @ts-ignore
+        console.log('  turn_detection:', event.session?.turn_detection);
       }
 
       // Server VAD detected speech starting
