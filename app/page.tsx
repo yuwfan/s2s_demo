@@ -70,12 +70,7 @@ Always be concise, helpful, and base responses on what the user was discussing.`
     session.current.on('transport_event', (event) => {
       setEvents((prev) => [...prev, event]);
 
-      // Log important events for debugging
-      if (event.type === 'session.created' || event.type === 'session.updated' || event.type?.includes('error')) {
-        console.log('📡 Transport event:', event.type, event);
-      }
-
-      // Catch error events from the server
+      // Check for and suppress expected empty buffer errors first
       if (event.type === 'error') {
         // @ts-ignore - error event structure
         const errorCode = event.error?.error?.code;
@@ -83,7 +78,7 @@ Always be concise, helpful, and base responses on what the user was discussing.`
         // Suppress expected "empty buffer" errors - these happen when VAD
         // fires before any audio has been sent (e.g., at session start)
         if (errorCode === 'input_audio_buffer_commit_empty') {
-          console.log('ℹ️ Ignoring empty buffer commit (no audio sent yet)');
+          // Silently ignore - this is expected behavior at session start
           return;
         }
 
@@ -92,6 +87,12 @@ Always be concise, helpful, and base responses on what the user was discussing.`
         console.error('Server error event:', event);
         console.error('Error details:', JSON.stringify(event, null, 2));
         console.groupEnd();
+        return;
+      }
+
+      // Log important events for debugging (after filtering out suppressed errors)
+      if (event.type === 'session.created' || event.type === 'session.updated') {
+        console.log('📡 Transport event:', event.type, event);
       }
 
       // No session.update needed - defaults work for WebSocket mode
@@ -212,7 +213,7 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       // fires before any audio has been sent (e.g., at session start)
       const errorCode = error?.error?.error?.code;
       if (errorCode === 'input_audio_buffer_commit_empty') {
-        console.log('ℹ️ Ignoring empty buffer commit error (no audio sent yet)');
+        // Silently ignore - this is expected behavior at session start
         return;
       }
 
