@@ -96,13 +96,32 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       }
 
       // Log important events for debugging (after filtering out suppressed errors)
-      if (event.type === 'session.created' || event.type === 'session.updated') {
+      if (event.type === 'session.created') {
         console.log('📡 Transport event:', event.type, event);
         // @ts-ignore
-        const session = event.session;
-        console.log('  turn_detection:', session?.turn_detection);
-        console.log('  input_audio_transcription:', session?.input_audio_transcription);
-        console.log('  modalities:', session?.modalities);
+        const sessionData = event.session;
+        console.log('  Initial session config:', sessionData);
+
+        // Configure session for silent listening with transcription
+        console.log('🔧 Configuring session for trigger-based responses...');
+        session.current?.transport?.sendEvent({
+          type: 'session.update',
+          session: {
+            modalities: ['text'], // Text-only mode - prevents audio responses
+            input_audio_transcription: {
+              model: 'whisper-1', // Enable transcription
+            },
+          },
+        });
+      }
+
+      if (event.type === 'session.updated') {
+        console.log('📡 Transport event:', event.type);
+        // @ts-ignore
+        const sessionData = event.session;
+        console.log('  modalities:', sessionData?.modalities);
+        console.log('  input_audio_transcription:', sessionData?.input_audio_transcription);
+        console.log('  turn_detection:', sessionData?.turn_detection);
       }
 
       // Server VAD detected speech starting
