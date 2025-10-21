@@ -171,20 +171,30 @@ Always be concise, helpful, and base responses on what the user was discussing.`
             const responseType = quickHintDetected ? 'quick hint' : 'full guidance';
             const duration = quickHintDetected ? settings.quickHintDuration : settings.fullGuidanceDuration;
 
-            console.log(`📤 Creating ${responseType} response with audio...`);
+            console.log(`📤 Switching to audio mode and creating ${responseType} response...`);
 
-            // Create response with audio modality (overrides session default)
+            // First, switch session to audio mode
             session.current?.transport?.sendEvent({
-              type: 'response.create',
-              response: {
-                modalities: ['text', 'audio'], // Enable audio for this response only
-                instructions: `Provide a ${responseType} (around ${duration} seconds) based on the conversation context. ${
-                  quickHintDetected
-                    ? 'Be brief and actionable, 1-2 sentences.'
-                    : 'Be comprehensive with steps and examples.'
-                }`,
+              type: 'session.update',
+              session: {
+                type: 'realtime',
+                output_modalities: ['text', 'audio'], // Enable audio output
               },
             });
+
+            // Then create response (audio will be generated)
+            setTimeout(() => {
+              session.current?.transport?.sendEvent({
+                type: 'response.create',
+                response: {
+                  instructions: `Provide a ${responseType} (around ${duration} seconds) based on the conversation context. ${
+                    quickHintDetected
+                      ? 'Be brief and actionable, 1-2 sentences.'
+                      : 'Be comprehensive with steps and examples.'
+                  }`,
+                },
+              });
+            }, 100);
           }
         }
       }
@@ -210,8 +220,17 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       }
 
       if (event.type === 'response.done') {
-        console.log('✅ Response complete');
+        console.log('✅ Response complete - switching back to text-only mode');
         setIsSpeaking(false);
+
+        // Switch back to text-only mode (silent)
+        session.current?.transport?.sendEvent({
+          type: 'session.update',
+          session: {
+            type: 'realtime',
+            output_modalities: ['text'], // Back to text-only (silent)
+          },
+        });
       }
 
       // Handle audio interruption
