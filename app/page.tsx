@@ -73,7 +73,7 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       // Check for and suppress expected empty buffer errors first
       if (event.type === 'error') {
         // @ts-ignore - error event structure
-        const errorCode = event.error?.error?.code;
+        const errorCode = event.error?.code;
 
         // Suppress expected "empty buffer" errors - these happen when VAD
         // fires before any audio has been sent (e.g., at session start)
@@ -95,8 +95,22 @@ Always be concise, helpful, and base responses on what the user was discussing.`
         console.log('📡 Transport event:', event.type, event);
       }
 
-      // No session.update needed - defaults work for WebSocket mode
-      // Server VAD is handled by default turn detection
+      // Configure server VAD for speech detection without auto-responses
+      // We want VAD events (speech_started/stopped) but manual response control
+      if (event.type === 'session.created') {
+        session.current?.transport?.sendEvent({
+          type: 'session.update',
+          session: {
+            turn_detection: {
+              type: 'server_vad',
+              threshold: 0.5,
+              prefix_padding_ms: 300,
+              silence_duration_ms: 500,
+              create_response: false, // Don't auto-create responses
+            },
+          },
+        });
+      }
 
       // Server VAD detected speech starting
       if (event.type === 'input_audio_buffer.speech_started') {
@@ -211,7 +225,7 @@ Always be concise, helpful, and base responses on what the user was discussing.`
     session.current.on('error', (error: any) => {
       // Suppress expected "empty buffer" errors - these happen when VAD
       // fires before any audio has been sent (e.g., at session start)
-      const errorCode = error?.error?.error?.code;
+      const errorCode = error?.error?.code;
       if (errorCode === 'input_audio_buffer_commit_empty') {
         // Silently ignore - this is expected behavior at session start
         return;
