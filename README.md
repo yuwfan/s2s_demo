@@ -117,6 +117,28 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
   - Purple = Speaking
 - Review event log for debugging
 
+## How It Works - Modality Switching
+
+The agent uses a clever **modality-switching** approach to stay silent until triggered:
+
+### Silent Listening Mode (Default)
+- Session configured with `modalities: ['text']` - **agent cannot speak**
+- Server VAD (Voice Activity Detection) enabled for continuous listening
+- All speech transcribed to text only
+- Agent physically incapable of producing audio in this mode
+
+### Triggered Response Mode
+1. **Trigger Detection**: When you say "good question" or "let me think"
+2. **Switch to Audio**: System updates session to `modalities: ['text', 'audio']`
+3. **Create Response**: Generate single audio response with context
+4. **Response Completes**: Automatically flip back to `modalities: ['text']`
+
+### Why This Works
+- **API-enforced silence**: Not relying on instructions (unreliable)
+- **State-based control**: Clean transitions between listen/speak modes
+- **Guaranteed behavior**: Agent cannot speak when in text-only mode
+- **No instruction hacks**: Simple, robust, and predictable
+
 ## Architecture
 
 ### Key Components

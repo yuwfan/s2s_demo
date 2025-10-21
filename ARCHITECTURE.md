@@ -1,5 +1,59 @@
 # System Architecture
 
+## Modality-Switching Architecture
+
+This implementation uses a **state-based modality switching** approach for reliable silence control:
+
+### Core Concept
+```
+┌─────────────────────────────────────────────────┐
+│  TEXT-ONLY MODE (Default - Silent Listening)    │
+│  modalities: ['text']                           │
+│  - Server VAD enabled for continuous listening  │
+│  - Speech → Text transcription only             │
+│  - Agent CANNOT produce audio (API enforced)    │
+│  - Waiting for trigger phrase detection...      │
+└─────────────────┬───────────────────────────────┘
+                  │
+                  │ Trigger phrase detected!
+                  │ ("good question" / "let me think")
+                  ▼
+┌─────────────────────────────────────────────────┐
+│  Switch to: modalities: ['text', 'audio']       │
+└─────────────────┬───────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────┐
+│  AUDIO MODE (Single Response)                   │
+│  modalities: ['text', 'audio']                  │
+│  - Create response with context                 │
+│  - Generate audio output                        │
+│  - Play to user                                 │
+└─────────────────┬───────────────────────────────┘
+                  │
+                  │ Response completes (response.done)
+                  │
+                  ▼
+┌─────────────────────────────────────────────────┐
+│  Switch back to: modalities: ['text']           │
+│  Return to Silent Listening Mode                │
+└─────────────────────────────────────────────────┘
+```
+
+### Why This Works Better Than Instructions
+
+❌ **Instruction-based silence** (unreliable):
+- "You are a silent assistant, don't respond unless..."
+- Model may interpret this flexibly
+- Can still respond "helpfully"
+- Depends on prompt following
+
+✅ **Modality-based silence** (guaranteed):
+- Agent physically cannot speak in text-only mode
+- API-level enforcement, not model behavior
+- State transitions are explicit and controlled
+- Predictable and reliable
+
 ## High-Level Architecture
 
 ```
