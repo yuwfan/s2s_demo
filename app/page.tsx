@@ -60,6 +60,9 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       config: {
         voice: 'alloy',
         turn_detection: null, // Disable automatic turn detection
+        input_audio_transcription: {
+          model: 'whisper-1', // Enable transcription without committing
+        },
       },
     });
 
@@ -104,19 +107,57 @@ Always be concise, helpful, and base responses on what the user was discussing.`
         console.log('🎤 Speech started');
       }
 
-      // Server VAD detected end of speech - commit the audio to build context
+      // Server VAD detected end of speech
+      // DON'T commit automatically - we'll commit manually when we want to create a response
       if (event.type === 'input_audio_buffer.speech_stopped') {
-        console.log('🎤 Speech stopped, committing audio...');
-        // Commit the audio to add it to conversation context
-        // This doesn't trigger a response - just builds context
-        session.current?.transport?.sendEvent({
-          type: 'input_audio_buffer.commit',
-        });
+        console.log('🎤 Speech stopped (audio buffered, not committed)');
+        // Audio stays in buffer, waiting for manual commit when triggered
       }
 
       // Audio successfully committed to conversation
       if (event.type === 'input_audio_buffer.committed') {
         console.log('✅ Audio committed to conversation context');
+      }
+
+      // Listen for transcription completion (without committing)
+      if (event.type === 'conversation.item.input_audio_transcription.completed') {
+        // @ts-ignore
+        const transcript = event.transcript;
+        console.log('📝 Transcript (uncommitted):', transcript);
+
+        if (transcript) {
+          const textLower = transcript.toLowerCase();
+          const quickHintDetected = textLower.includes(settings.quickHintPhrase.toLowerCase());
+          const fullGuidanceDetected = textLower.includes(settings.fullGuidancePhrase.toLowerCase());
+
+          if (quickHintDetected || fullGuidanceDetected) {
+            console.log(`🎯 Trigger detected: "${transcript}"`);
+
+            // First commit the audio
+            session.current?.transport?.sendEvent({
+              type: 'input_audio_buffer.commit',
+            });
+
+            // Then create response
+            const responseType = quickHintDetected ? 'quick hint' : 'full guidance';
+            const duration = quickHintDetected ? settings.quickHintDuration : settings.fullGuidanceDuration;
+
+            setTimeout(() => {
+              console.log(`📤 Creating ${responseType} response...`);
+              session.current?.transport?.sendEvent({
+                type: 'response.create',
+                response: {
+                  modalities: ['text', 'audio'],
+                  instructions: `Provide a ${responseType} (around ${duration} seconds) based on the conversation context. ${
+                    quickHintDetected
+                      ? 'Be brief and actionable, 1-2 sentences.'
+                      : 'Be comprehensive with steps and examples.'
+                  }`,
+                },
+              });
+            }, 100);
+          }
+        }
       }
 
       // Track response lifecycle for debugging
