@@ -61,7 +61,7 @@ Response format:
     const agent = createAgent(settings);
 
     session.current = new RealtimeSession(agent, {
-      model: 'gpt-4o-realtime-preview',
+      model: 'gpt-realtime',
       config: {
         audio: {
           output: {

@@ -17,7 +17,7 @@ export async function getToken() {
       body: JSON.stringify({
         session: {
           type: 'realtime',
-          model: 'gpt-4o-realtime-preview',
+          model: 'gpt-realtime',
         },
       }),
     },
