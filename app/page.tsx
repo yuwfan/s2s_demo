@@ -57,8 +57,12 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       },
     });
 
-    // Configure session for silent listening mode after connection
+    // Handle all transport events in one listener
     session.current.on('transport_event', (event) => {
+      // Log all events
+      setEvents((prev) => [...prev, event]);
+
+      // Configure session after it's created
       if (event.type === 'session.created') {
         // Set up for silent context collection:
         // - No turn_detection (we'll manually commit audio)
@@ -75,7 +79,7 @@ Always be concise, helpful, and base responses on what the user was discussing.`
         });
       }
 
-      // Manually commit audio when user stops speaking (using conversation.item.input_audio_transcription.completed)
+      // Manually commit audio when user stops speaking
       if (event.type === 'input_audio_buffer.speech_stopped') {
         // Commit the audio buffer to add it to conversation context
         session.current?.transport?.sendEvent({
@@ -88,11 +92,6 @@ Always be concise, helpful, and base responses on what the user was discussing.`
         // Audio has been committed and added to context
         // Don't create response - just collecting context
       }
-    });
-
-    // Listen to all transport events
-    session.current.on('transport_event', (event) => {
-      setEvents((prev) => [...prev, event]);
 
       // Track when agent starts/stops speaking
       if (event.type === 'response.audio.delta') {
