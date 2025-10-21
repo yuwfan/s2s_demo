@@ -110,12 +110,14 @@ Always be concise, helpful, and base responses on what the user was discussing.`
             type: 'realtime', // Required field
             output_modalities: ['text'], // Text-only mode - prevents audio responses
             audio: {
-              output: {
-                voice: 'alloy', // Voice config goes in audio.output
+              input: {
+                transcription: {
+                  model: 'whisper-1', // Enable transcription
+                },
               },
-            },
-            input_audio_transcription: {
-              model: 'whisper-1', // Enable transcription
+              output: {
+                voice: 'alloy', // Voice config
+              },
             },
           },
         });
