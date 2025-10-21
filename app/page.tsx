@@ -95,11 +95,17 @@ Always be concise, helpful, and base responses on what the user was discussing.`
         console.log('📡 Transport event:', event.type, event);
       }
 
-      // Note: We don't configure turn_detection here
-      // In WebSocket mode with sendAudio(), the default behavior gives us:
-      // - speech_started/stopped events from server VAD
-      // - Manual control over when to commit audio
-      // - Manual control over when to create responses
+      // Disable automatic turn detection to prevent auto-responses
+      // This is critical - without this, the agent responds after every utterance
+      if (event.type === 'session.created') {
+        console.log('🔧 Disabling automatic turn detection...');
+        session.current?.transport?.sendEvent({
+          type: 'session.update',
+          session: {
+            turn_detection: null, // Disable auto-response after user speech
+          },
+        });
+      }
 
       // Server VAD detected speech starting
       if (event.type === 'input_audio_buffer.speech_started') {
