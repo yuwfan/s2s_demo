@@ -423,6 +423,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
         if (settings.inputMode === 'text') {
           // @ts-ignore
           const response = event.response;
+          console.log('💬 [Text Mode] Response:', response);
           // The response output contains the assistant's message
           if (response?.output && response.output.length > 0) {
             const assistantOutput = response.output[0];
@@ -433,7 +434,7 @@ Always be concise, helpful, and base responses on what the user was discussing. 
             // Check for audio transcript first (since we generate audio responses)
             if (assistantOutput.type === 'message') {
               assistantOutput.content?.forEach((content: any) => {
-                if (content.type === 'audio' && content.transcript) {
+                if (content.type === 'output_audio' && content.transcript) {
                   assistantText = content.transcript;
                 } else if (content.type === 'text') {
                   assistantText = content.text;
