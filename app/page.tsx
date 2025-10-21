@@ -33,25 +33,30 @@ export default function Home() {
 
   // Create agent with dynamic instructions
   const createAgent = (settings: VoiceSettings) => {
-    const instructions = `You are a helpful voice assistant that listens to conversations and provides assistance when triggered.
+    const instructions = `You are a silent listening assistant. Your ONLY job is to listen and wait.
 
-CRITICAL INSTRUCTIONS:
-1. You are in LISTENING MODE by default. Listen carefully to everything the user says and remember the context.
-2. Only respond when you detect one of these trigger phrases:
-   - "${settings.quickHintPhrase}" → Provide a BRIEF 10-second helpful hint based on what you just heard
-   - "${settings.fullGuidancePhrase}" → Provide DETAILED 20-second comprehensive guidance based on the conversation
-3. When you hear interrupt phrases like "${settings.interruptPhrases.join('", "')}", STOP speaking immediately.
-4. Keep your responses natural and conversational.
-5. For quick hints: Be concise, around ${settings.quickHintDuration} seconds of speech.
-6. For full guidance: Be thorough but structured, around ${settings.fullGuidanceDuration} seconds of speech.
-7. Always base your response on the recent conversation context.
+ABSOLUTE RULES - DO NOT BREAK THESE:
+1. DO NOT respond to questions, statements, or anything the user says
+2. DO NOT engage in conversation
+3. DO NOT answer "hello", "how are you", or any greetings
+4. DO NOT provide help unless you hear the EXACT trigger phrases below
+5. STAY COMPLETELY SILENT unless triggered
 
-Response format:
-- Quick hint: Direct, actionable advice in 1-2 sentences
-- Full guidance: Step-by-step explanation with context and examples`;
+YOU MUST ONLY RESPOND when you hear these EXACT trigger phrases:
+- "${settings.quickHintPhrase}" → Give a brief ${settings.quickHintDuration}-second hint about what you just heard
+- "${settings.fullGuidancePhrase}" → Give a detailed ${settings.fullGuidanceDuration}-second explanation about the conversation
+
+HOW TO RESPOND WHEN TRIGGERED:
+- If you hear "${settings.quickHintPhrase}": Provide 1-2 sentences of helpful advice based on the last thing the user said before the trigger
+- If you hear "${settings.fullGuidancePhrase}": Provide a comprehensive explanation with steps and examples based on the entire conversation
+
+INTERRUPT PHRASES (stop speaking immediately):
+- ${settings.interruptPhrases.join(', ')}
+
+REMEMBER: You are a SILENT LISTENER. Do not speak unless you hear the exact trigger phrases above.`;
 
     return new RealtimeAgent({
-      name: 'Voice Assistant',
+      name: 'Silent Listening Assistant',
       instructions,
       tools: [],
     });
@@ -68,12 +73,7 @@ Response format:
             voice: 'alloy',
           },
         },
-        turn_detection: {
-          type: 'server_vad',
-          threshold: 0.5,
-          prefix_padding_ms: 300,
-          silence_duration_ms: 500,
-        },
+        turn_detection: null, // Disable automatic turn detection - agent only responds to triggers
       },
     });
 
@@ -93,6 +93,7 @@ Response format:
     // Listen to conversation history updates
     session.current.on('history_updated', (history: RealtimeItem[]) => {
       const newTranscripts: TranscriptItem[] = [];
+      let latestUserText = '';
 
       history.forEach((item) => {
         if (item.type === 'message') {
@@ -118,12 +119,29 @@ Response format:
 
               // Update conversation history for context
               if (item.role === 'user') {
+                latestUserText = text;
                 setConversationHistory((prev) => [...prev, text].slice(-10)); // Keep last 10 messages
               }
             }
           });
         }
       });
+
+      // Detect trigger phrases and manually trigger response
+      if (latestUserText) {
+        const textLower = latestUserText.toLowerCase();
+        const quickHintDetected = textLower.includes(settings.quickHintPhrase.toLowerCase());
+        const fullGuidanceDetected = textLower.includes(settings.fullGuidancePhrase.toLowerCase());
+
+        if (quickHintDetected || fullGuidanceDetected) {
+          // Trigger a response by sending a special message
+          setTimeout(() => {
+            session.current?.transport?.sendEvent({
+              type: 'response.create',
+            });
+          }, 100);
+        }
+      }
 
       setTranscripts(newTranscripts);
     });
