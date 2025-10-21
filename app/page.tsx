@@ -77,6 +77,17 @@ Always be concise, helpful, and base responses on what the user was discussing.`
 
       // Catch error events from the server
       if (event.type === 'error') {
+        // @ts-ignore - error event structure
+        const errorCode = event.error?.error?.code;
+
+        // Suppress expected "empty buffer" errors - these happen when VAD
+        // fires before any audio has been sent (e.g., at session start)
+        if (errorCode === 'input_audio_buffer_commit_empty') {
+          console.log('ℹ️ Ignoring empty buffer commit (no audio sent yet)');
+          return;
+        }
+
+        // Log other errors
         console.group('🔴 Server Error Event');
         console.error('Server error event:', event);
         console.error('Error details:', JSON.stringify(event, null, 2));
@@ -86,12 +97,24 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       // No session.update needed - defaults work for WebSocket mode
       // Server VAD is handled by default turn detection
 
+      // Server VAD detected speech starting
+      if (event.type === 'input_audio_buffer.speech_started') {
+        console.log('🎤 Speech started');
+      }
+
       // Server VAD detected end of speech - commit the audio to build context
       if (event.type === 'input_audio_buffer.speech_stopped') {
-        console.log('Speech stopped, committing audio...');
+        console.log('🎤 Speech stopped, committing audio...');
+        // Commit the audio to add it to conversation context
+        // This doesn't trigger a response - just builds context
         session.current?.transport?.sendEvent({
           type: 'input_audio_buffer.commit',
         });
+      }
+
+      // Audio successfully committed to conversation
+      if (event.type === 'input_audio_buffer.committed') {
+        console.log('✅ Audio committed to conversation context');
       }
 
       // Handle audio output from agent responses
@@ -228,7 +251,17 @@ Always be concise, helpful, and base responses on what the user was discussing.`
   async function startRecording() {
     await recorder.current?.record(async (data: any) => {
       // Send audio to the session
-      await session.current?.sendAudio(data.mono as unknown as ArrayBuffer);
+      if (session.current && data.mono) {
+        try {
+          await session.current.sendAudio(data.mono as unknown as ArrayBuffer);
+          // Log occasionally to confirm audio is flowing
+          if (Math.random() < 0.01) { // 1% of chunks
+            console.log('🎤 Sending audio chunk, size:', data.mono.byteLength);
+          }
+        } catch (error) {
+          console.error('Error sending audio:', error);
+        }
+      }
     });
   }
 
