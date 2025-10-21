@@ -58,10 +58,11 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       transport: 'websocket',
       model: 'gpt-realtime',
       config: {
+        modalities: ['text'], // Text-only mode - agent cannot produce audio
         voice: 'alloy',
         turn_detection: null, // Disable automatic turn detection
         input_audio_transcription: {
-          model: 'whisper-1', // Enable transcription without committing
+          model: 'whisper-1', // Enable transcription
         },
       },
     });
@@ -97,9 +98,11 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       // Log important events for debugging (after filtering out suppressed errors)
       if (event.type === 'session.created' || event.type === 'session.updated') {
         console.log('📡 Transport event:', event.type, event);
-        // Log turn_detection setting to verify it's disabled
         // @ts-ignore
-        console.log('  turn_detection:', event.session?.turn_detection);
+        const session = event.session;
+        console.log('  turn_detection:', session?.turn_detection);
+        console.log('  input_audio_transcription:', session?.input_audio_transcription);
+        console.log('  modalities:', session?.modalities);
       }
 
       // Server VAD detected speech starting
@@ -133,29 +136,23 @@ Always be concise, helpful, and base responses on what the user was discussing.`
           if (quickHintDetected || fullGuidanceDetected) {
             console.log(`🎯 Trigger detected: "${transcript}"`);
 
-            // First commit the audio
-            session.current?.transport?.sendEvent({
-              type: 'input_audio_buffer.commit',
-            });
-
-            // Then create response
             const responseType = quickHintDetected ? 'quick hint' : 'full guidance';
             const duration = quickHintDetected ? settings.quickHintDuration : settings.fullGuidanceDuration;
 
-            setTimeout(() => {
-              console.log(`📤 Creating ${responseType} response...`);
-              session.current?.transport?.sendEvent({
-                type: 'response.create',
-                response: {
-                  modalities: ['text', 'audio'],
-                  instructions: `Provide a ${responseType} (around ${duration} seconds) based on the conversation context. ${
-                    quickHintDetected
-                      ? 'Be brief and actionable, 1-2 sentences.'
-                      : 'Be comprehensive with steps and examples.'
-                  }`,
-                },
-              });
-            }, 100);
+            console.log(`📤 Creating ${responseType} response with audio...`);
+
+            // Create response with audio modality (overrides session default)
+            session.current?.transport?.sendEvent({
+              type: 'response.create',
+              response: {
+                modalities: ['text', 'audio'], // Enable audio for this response only
+                instructions: `Provide a ${responseType} (around ${duration} seconds) based on the conversation context. ${
+                  quickHintDetected
+                    ? 'Be brief and actionable, 1-2 sentences.'
+                    : 'Be comprehensive with steps and examples.'
+                }`,
+              },
+            });
           }
         }
       }
