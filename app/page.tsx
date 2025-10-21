@@ -72,7 +72,15 @@ Always be concise, helpful, and base responses on what the user was discussing.`
 
       // Log important events for debugging
       if (event.type === 'session.created' || event.type === 'session.updated' || event.type?.includes('error')) {
-        console.log('Transport event:', event.type, event);
+        console.log('📡 Transport event:', event.type, event);
+      }
+
+      // Catch error events from the server
+      if (event.type === 'error') {
+        console.group('🔴 Server Error Event');
+        console.error('Server error event:', event);
+        console.error('Error details:', JSON.stringify(event, null, 2));
+        console.groupEnd();
       }
 
       // No session.update needed - defaults work for WebSocket mode
@@ -175,24 +183,41 @@ Always be concise, helpful, and base responses on what the user was discussing.`
       setTranscripts(newTranscripts);
     });
 
-    // Listen for errors
+    // Listen for errors with comprehensive logging
     session.current.on('error', (error) => {
-      console.error('Session error:', error);
-      if (error instanceof Error) {
-        console.error('Error message:', error.message);
-        console.error('Error stack:', error.stack);
-        console.error('Error name:', error.name);
-      }
-      console.error('Error details:', JSON.stringify(error, null, 2));
+      console.group('🔴 Session Error Captured');
+      console.error('Raw error object:', error);
       console.error('Error type:', typeof error);
-      console.error('Error keys:', error ? Object.keys(error) : 'null/undefined');
-      console.error('Error toString:', error?.toString());
-      // Try to extract any nested properties
-      if (error && typeof error === 'object') {
-        for (const key in error) {
-          console.error(`Error.${key}:`, (error as any)[key]);
-        }
+      console.error('Error constructor:', error?.constructor?.name);
+
+      if (error instanceof Error) {
+        console.error('Error.message:', error.message);
+        console.error('Error.stack:', error.stack);
+        console.error('Error.name:', error.name);
       }
+
+      try {
+        console.error('JSON.stringify:', JSON.stringify(error, null, 2));
+      } catch (e) {
+        console.error('Cannot stringify error:', e);
+      }
+
+      console.error('Object.keys:', error ? Object.keys(error) : 'null/undefined');
+      console.error('Object.getOwnPropertyNames:', error ? Object.getOwnPropertyNames(error) : 'null/undefined');
+
+      // Try to extract all properties
+      if (error && typeof error === 'object') {
+        const allProps = Object.getOwnPropertyNames(error);
+        allProps.forEach(key => {
+          try {
+            console.error(`  ${key}:`, (error as any)[key]);
+          } catch (e) {
+            console.error(`  ${key}: [Cannot access]`);
+          }
+        });
+      }
+
+      console.groupEnd();
     });
 
     return () => {
@@ -209,24 +234,43 @@ Always be concise, helpful, and base responses on what the user was discussing.`
 
   async function connect() {
     if (isConnected) {
+      console.log('Disconnecting...');
       await session.current?.close();
       await player.current?.interrupt();
       await recorder.current?.end();
       setIsConnected(false);
       setIsListening(false);
     } else {
-      await player.current?.connect();
-      const token = await getToken();
+      console.log('Connecting to session...');
       try {
+        await player.current?.connect();
+        console.log('Player connected');
+
+        const token = await getToken();
+        console.log('Got token, connecting session...');
+
         await session.current?.connect({
           apiKey: token,
         });
+        console.log('Session connected');
+
         await recorder.current?.begin();
+        console.log('Recorder initialized');
+
         await startRecording();
+        console.log('Recording started');
+
         setIsConnected(true);
         setIsListening(true);
+        console.log('✅ Connection complete');
       } catch (error) {
-        console.error('Error connecting to session', error);
+        console.group('❌ Connection Error');
+        console.error('Error connecting to session:', error);
+        if (error instanceof Error) {
+          console.error('Message:', error.message);
+          console.error('Stack:', error.stack);
+        }
+        console.groupEnd();
       }
     }
   }
